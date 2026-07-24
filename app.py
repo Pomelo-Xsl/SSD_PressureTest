@@ -5,6 +5,7 @@
 ENABLE_DESTRUCTIVE_FIO=1，以及 SSD 准入检查通过。
 """
 import json
+import io
 import os
 import platform
 import random
@@ -14,10 +15,11 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 ROOT, DATA_FILE = Path(__file__).parent, Path(__file__).parent / "data.json"
 LOG_ROOT = ROOT / "logs"
@@ -93,11 +95,11 @@ def collect_nvme_logs(device):
     jobs=[("全量 telemetry",["nvme","telemetry-log",controller,"-o",str(folder/"telemetry_full.log")]),("关键 telemetry",["nvme","telemetry-log",controller,"-c","-o",str(folder/"telemetry_critical.log")]),("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
     results=[]
     for name,cmd in jobs:
-        output_file=folder/("smart_c0.log" if "0xC0" in name else "smart_ca.log" if "0xCA" in name else "")
+        output_file=folder/"smart_c0.log" if "0xC0" in name else folder/"smart_ca.log" if "0xCA" in name else None
         try: result=subprocess.run(cmd,capture_output=True,text=True,timeout=180,check=False)
         except (OSError,subprocess.TimeoutExpired) as exc: results.append({"name":name,"ok":False,"message":str(exc)}); continue
         if output_file: output_file.write_text(result.stdout+("\n"+result.stderr if result.stderr else ""),encoding="utf-8")
-        target=output_file if output_file else Path(cmd[-1])
+        target=output_file or Path(cmd[-1])
         results.append({"name":name,"ok":result.returncode==0,"file":str(target.relative_to(LOG_ROOT)) if target.exists() else None,"message":(result.stderr or result.stdout)[-300:]})
     return {"controller":controller,"folder":str(folder.relative_to(LOG_ROOT)),"results":results}
 def flatten(items):
@@ -286,10 +288,20 @@ class Handler(SimpleHTTPRequestHandler):
             with LOCK: return self.send_json(self.state())
         if path.startswith("/api/logs/"):
             try:
-                file=(LOG_ROOT/path.removeprefix("/api/logs/")).resolve()
+                file=(LOG_ROOT/unquote(path.removeprefix("/api/logs/"))).resolve()
                 if LOG_ROOT.resolve() not in file.parents or not file.is_file(): raise FileNotFoundError
                 raw=file.read_bytes(); self.send_response(200); self.send_header("Content-Type","application/octet-stream"); self.send_header("Content-Disposition",f'attachment; filename="{file.name}"'); self.send_header("Content-Length",str(len(raw))); self.end_headers(); return self.wfile.write(raw)
             except FileNotFoundError: return self.send_json({"error":"日志文件不存在"},404)
+        if path.startswith("/api/log-archives/"):
+            try:
+                folder=(LOG_ROOT/unquote(path.removeprefix("/api/log-archives/"))).resolve()
+                if LOG_ROOT.resolve() not in folder.parents or not folder.is_dir(): raise FileNotFoundError
+                buffer=io.BytesIO()
+                with zipfile.ZipFile(buffer,"w",zipfile.ZIP_DEFLATED) as archive:
+                    for file in folder.iterdir():
+                        if file.is_file(): archive.write(file,file.name)
+                raw=buffer.getvalue(); self.send_response(200); self.send_header("Content-Type","application/zip"); self.send_header("Content-Disposition",f'attachment; filename="{folder.name}.zip"'); self.send_header("Content-Length",str(len(raw))); self.end_headers(); return self.wfile.write(raw)
+            except FileNotFoundError: return self.send_json({"error":"日志目录不存在"},404)
         if path.startswith("/api/report/"):
             with LOCK:
                 task=next((x for x in STATE["tasks"] if x["id"]==path.rsplit("/",1)[-1]),None)
@@ -335,6 +347,6 @@ class Handler(SimpleHTTPRequestHandler):
                             task["status"]="已停止";task["ended_at"]=now();task["result"]="人工终止";event(task,"警告","任务由操作员停止");launch_next();persist()
                     return self.send_json(task)
             return self.send_json({"error":"接口不存在"},404)
-        except (json.JSONDecodeError,KeyError,ValueError) as exc:return self.send_json({"error":f"请求无效：{exc}"},400)
+        except (json.JSONDecodeError,KeyError,ValueError,OSError) as exc:return self.send_json({"error":f"请求处理失败：{exc}"},400)
 if __name__=="__main__":
     print("SSD PressureTest: http://127.0.0.1:8080"); ThreadingHTTPServer(("127.0.0.1",int(os.getenv("PORT","8080"))),Handler).serve_forever()
