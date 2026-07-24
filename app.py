@@ -55,24 +55,44 @@ def smart(path, transport):
         except (ValueError, TypeError): pass
     return info
 
+def testability(disk):
+    """返回裸盘压力测试的准入结果；检查整块盘及其全部子分区。"""
+    descendants=list(flatten([disk]))
+    mountpoints=[]
+    for item in descendants:
+        mountpoints.extend(m for m in (item.get("mountpoints") or []) if m)
+    mountpoints=sorted(set(mountpoints))
+    reasons=[]
+    if str(disk.get("rota")) not in ("0", "False", "false", "None"):
+        reasons.append("检测为机械旋转盘，非 SSD")
+    if str(disk.get("ro")) in ("1", "True", "true"):
+        reasons.append("设备为只读状态")
+    if mountpoints:
+        if any(m in ("/", "/boot", "/boot/efi", "[SWAP]") for m in mountpoints):
+            reasons.append("包含系统盘、启动盘或交换分区")
+        else:
+            reasons.append("存在已挂载分区")
+    return {"testable":not reasons,"reasons":reasons,"mountpoints":mountpoints}
+
 def discover_linux_devices():
     if not is_linux() or not shutil.which("lsblk"): return []
-    result=command(["lsblk","--json","--bytes","--output","NAME,PATH,TYPE,SIZE,MODEL,SERIAL,TRAN,ROTA,MOUNTPOINTS"])
+    result=command(["lsblk","--json","--bytes","--output","NAME,PATH,TYPE,SIZE,MODEL,SERIAL,TRAN,ROTA,RO,MOUNTPOINTS"])
     if not result or result.returncode: return []
     try: blocks=json.loads(result.stdout).get("blockdevices",[])
     except ValueError: return []
     devices=[]
     for disk in flatten(blocks):
-        if disk.get("type") != "disk" or str(disk.get("rota")) not in ("0", "False", "false", "None"): continue
+        if disk.get("type") != "disk": continue
         path=disk.get("path", ""); trans=(disk.get("tran") or "nvme").lower()
         if not path.startswith("/dev/"): continue
-        mounts=[m for m in (disk.get("mountpoints") or []) if m]
+        safety=testability(disk)
         health=smart(path, trans)
-        devices.append({"id":disk["name"],"path":path,"name":(disk.get("model") or "Enterprise SSD").strip(),"serial":(disk.get("serial") or "未读取").strip(),"interface":"NVMe" if trans=="nvme" else trans.upper(),"capacity":f"{int(disk.get('size',0))/1024**3:.0f} GB","health":health["health"],"temperature":health["temperature"],"mounted":bool(mounts),"mountpoints":mounts,"status":"已挂载（受保护）" if mounts else "可测试"})
+        status="可测试" if safety["testable"] else "不可测试"
+        devices.append({"id":disk["name"],"path":path,"name":(disk.get("model") or "Enterprise SSD").strip(),"serial":(disk.get("serial") or "未读取").strip(),"interface":"NVMe" if trans=="nvme" else trans.upper(),"capacity":f"{int(disk.get('size',0))/1024**3:.0f} GB","health":health["health"],"temperature":health["temperature"],"mounted":bool(safety["mountpoints"]),"mountpoints":safety["mountpoints"],"testable":safety["testable"],"test_reasons":safety["reasons"],"status":status})
     return devices
 
 def demo_devices():
-    return [{"id":"demo-nvme0","path":"/dev/nvme0n1","name":"Samsung PM9A3 3.84TB","serial":"DEMO-24001","interface":"NVMe Gen4","capacity":"3.49 TB","health":98,"temperature":38,"mounted":False,"mountpoints":[],"status":"演示设备"}]
+    return [{"id":"demo-nvme0","path":"/dev/nvme0n1","name":"Samsung PM9A3 3.84TB","serial":"DEMO-24001","interface":"NVMe Gen4","capacity":"3.49 TB","health":98,"temperature":38,"mounted":False,"mountpoints":[],"testable":True,"test_reasons":[],"status":"演示设备"}]
 def load_state():
     if DATA_FILE.exists():
         try: return json.loads(DATA_FILE.read_text(encoding="utf-8"))
@@ -159,10 +179,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if path=="/api/tasks":
                     devices=discover_linux_devices() if is_linux() else demo_devices(); device=next((x for x in devices if x["id"]==data.get("device_id")),None); plan=next((x for x in STATE["plans"] if x["id"]==data.get("plan_id")),None); mode=data.get("mode","demo")
                     if not device or not plan:return self.send_json({"error":"请选择有效设备和策略"},400)
+                    if not device.get("testable", False):
+                        return self.send_json({"error":"该 SSD 不满足测试准入条件："+"；".join(device.get("test_reasons",["设备状态未知"]))},403)
                     if mode=="real":
                         phrase=f"ERASE {device['path']}"
                         if not (is_linux() and shutil.which("fio") and destructive_enabled() and getattr(os,"geteuid",lambda:1)()==0): return self.send_json({"error":"真实压测要求 Linux、root、fio 与 ENABLE_DESTRUCTIVE_FIO=1"},403)
-                        if device["mounted"]:return self.send_json({"error":f"拒绝：设备已挂载到 {', '.join(device['mountpoints'])}"},403)
                         if data.get("confirmation")!=phrase:return self.send_json({"error":f"确认短语不正确，应为：{phrase}"},403)
                     task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"],"duration":plan["duration"],"block_size":plan["block_size"],"read_ratio":plan["read_ratio"],"queue_depth":plan["queue_depth"],"threshold_temp":plan["threshold_temp"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"运行中","result":"--","started_at":now(),"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[]}
                     event(task,"信息","任务已创建" if mode=="real" else "安全演示任务已启动：只生成模拟遥测数据");STATE["tasks"].insert(0,task);persist();threading.Thread(target=fio_runner if mode=="real" else demo_runner,args=(task["id"],),daemon=True).start();return self.send_json(task,201)
