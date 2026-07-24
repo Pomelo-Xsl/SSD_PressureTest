@@ -20,7 +20,7 @@
       <div class="setup-grid">
         <article class="step-card" id="devices"><div class="step-number">01</div><div class="step-title"><h3>选择企业级 SSD</h3><p>自动发现 Linux 物理磁盘</p></div><div class="device-list" id="deviceCards"></div></article>
         <article class="step-card" id="strategy"><div class="step-number">02</div><div class="step-title"><h3>选择压力策略</h3><p>按验证目标匹配负载</p></div><div class="plan-list" id="planCards"></div></article>
-        <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><div class="confirm-wrap" id="confirmBox" hidden><label for="confirmation">输入确认短语</label><input id="confirmation" autocomplete="off" placeholder="ERASE /dev/nvmeXnY"></div><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
+        <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
       </div>
     </section>
     <section class="monitor-grid">

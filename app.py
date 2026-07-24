@@ -2,7 +2,7 @@
 """Linux 企业级 SSD 稳定性与耐久压力测试系统。
 
 默认演示模式绝不写盘。真实裸盘 fio 压测必须同时满足：Linux、root、
-ENABLE_DESTRUCTIVE_FIO=1、设备未挂载，以及页面中输入完整的擦除确认短语。
+ENABLE_DESTRUCTIVE_FIO=1，以及 SSD 准入检查通过。
 """
 import json
 import os
@@ -217,9 +217,7 @@ class Handler(SimpleHTTPRequestHandler):
                     if not device.get("testable", False):
                         return self.send_json({"error":"该 SSD 不满足测试准入条件："+"；".join(device.get("test_reasons",["设备状态未知"]))},403)
                     if mode=="real":
-                        phrase=f"ERASE {device['path']}"
                         if not (is_linux() and shutil.which("fio") and destructive_enabled() and getattr(os,"geteuid",lambda:1)()==0): return self.send_json({"error":"真实压测要求 Linux、root、fio 与 ENABLE_DESTRUCTIVE_FIO=1"},403)
-                        if data.get("confirmation")!=phrase:return self.send_json({"error":f"确认短语不正确，应为：{phrase}"},403)
                     busy=any(t["status"] in ("运行中","停止中") for t in STATE["tasks"])
                     task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"],"duration":plan["duration"],"block_size":plan["block_size"],"read_ratio":plan["read_ratio"],"queue_depth":plan["queue_depth"],"threshold_temp":plan["threshold_temp"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"排队中" if busy else "运行中","result":"--","started_at":None,"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[],"queued":busy}
                     event(task,"信息","已有测试任务正在运行，任务已进入全局队列" if busy else "任务已创建");STATE["tasks"].insert(0,task)
