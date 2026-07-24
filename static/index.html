@@ -23,6 +23,7 @@
         <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><label id="deviceConfirmBox" class="device-confirm" hidden><input id="confirmDevice" type="checkbox"><span>我确认当前选中的 SSD 是专用测试盘，允许覆盖其数据。</span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
       </div>
     </section>
+    <section class="panel" style="margin-top:18px"><div class="panel-head"><div><h2>NVMe 盘片日志与扩展 SMART</h2><p>采集选中 SSD 的全量/关键 telemetry，以及 0xC0、0xCA 扩展日志。</p></div><button class="primary" onclick="collectLogs()">采集当前 SSD 日志</button></div><div id="logResult" class="muted" style="margin-top:12px">日志将保存到服务器项目目录的 logs 文件夹。</div></section>
     <section class="monitor-grid">
       <article class="panel telemetry"><div class="panel-head"><div><h2>实时遥测</h2><p id="telemetryName">等待任务启动</p></div><span class="live-dot">● LIVE</span></div><div class="chart-key"><span><i class="orange"></i>温度</span><span><i class="blue"></i>P99 延迟</span></div><div id="chart" class="chart"></div></article>
       <article class="panel events-panel"><div class="panel-head"><div><h2>异常与事件</h2><p>优先显示需要关注的信息</p></div></div><div id="events" class="events"></div></article>

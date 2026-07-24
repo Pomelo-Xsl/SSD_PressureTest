@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT, DATA_FILE = Path(__file__).parent, Path(__file__).parent / "data.json"
+LOG_ROOT = ROOT / "logs"
 LOCK, PROCESSES = threading.Lock(), {}
 DEFAULT_PLANS = [
     {"id":"plan-burnin","name":"72 小时耐久老化","duration":72,"block_size":"4K","read_ratio":30,"queue_depth":64,"threshold_temp":70,"description":"随机混合 I/O，验证企业盘长时写入稳定性、温度节流与尾延迟"},
@@ -79,6 +80,26 @@ def resolve_test_config(plan, overrides):
 def command(cmd):
     try: return subprocess.run(cmd, capture_output=True, text=True, timeout=12, check=False)
     except (OSError, subprocess.TimeoutExpired): return None
+def nvme_controller(path):
+    """将 namespace 路径 /dev/nvmeXnY 转换为控制器路径 /dev/nvmeX。"""
+    match=re.fullmatch(r"(/dev/nvme\d+)(?:n\d+)?", path)
+    return match.group(1) if match else None
+def collect_nvme_logs(device):
+    controller=nvme_controller(device["path"])
+    if not controller: raise ValueError("仅支持 NVMe 设备日志采集")
+    if not shutil.which("nvme"): raise ValueError("未安装 nvme-cli，无法采集日志")
+    stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder=LOG_ROOT / f"{device['id']}_{stamp}"; folder.mkdir(parents=True,exist_ok=True)
+    jobs=[("全量 telemetry",["nvme","telemetry-log",controller,"-o",str(folder/"telemetry_full.log")]),("关键 telemetry",["nvme","telemetry-log",controller,"-c","-o",str(folder/"telemetry_critical.log")]),("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
+    results=[]
+    for name,cmd in jobs:
+        output_file=folder/("smart_c0.log" if "0xC0" in name else "smart_ca.log" if "0xCA" in name else "")
+        try: result=subprocess.run(cmd,capture_output=True,text=True,timeout=180,check=False)
+        except (OSError,subprocess.TimeoutExpired) as exc: results.append({"name":name,"ok":False,"message":str(exc)}); continue
+        if output_file: output_file.write_text(result.stdout+("\n"+result.stderr if result.stderr else ""),encoding="utf-8")
+        target=output_file if output_file else Path(cmd[-1])
+        results.append({"name":name,"ok":result.returncode==0,"file":str(target.relative_to(LOG_ROOT)) if target.exists() else None,"message":(result.stderr or result.stdout)[-300:]})
+    return {"controller":controller,"folder":str(folder.relative_to(LOG_ROOT)),"results":results}
 def flatten(items):
     for item in items:
         yield item
@@ -263,6 +284,12 @@ class Handler(SimpleHTTPRequestHandler):
         path=urlparse(self.path).path
         if path=="/api/state":
             with LOCK: return self.send_json(self.state())
+        if path.startswith("/api/logs/"):
+            try:
+                file=(LOG_ROOT/path.removeprefix("/api/logs/")).resolve()
+                if LOG_ROOT.resolve() not in file.parents or not file.is_file(): raise FileNotFoundError
+                raw=file.read_bytes(); self.send_response(200); self.send_header("Content-Type","application/octet-stream"); self.send_header("Content-Disposition",f'attachment; filename="{file.name}"'); self.send_header("Content-Length",str(len(raw))); self.end_headers(); return self.wfile.write(raw)
+            except FileNotFoundError: return self.send_json({"error":"日志文件不存在"},404)
         if path.startswith("/api/report/"):
             with LOCK:
                 task=next((x for x in STATE["tasks"] if x["id"]==path.rsplit("/",1)[-1]),None)
@@ -291,6 +318,10 @@ class Handler(SimpleHTTPRequestHandler):
                     event(task,"信息","已有测试任务正在运行，任务已进入全局队列" if busy else "任务已创建");STATE["tasks"].insert(0,task)
                     if not busy: launch_task(task)
                     persist();return self.send_json(task,201)
+                if path.startswith("/api/devices/") and path.endswith("/logs"):
+                    device_id=path.split("/")[3]; devices=discover_linux_devices() if is_linux() else demo_devices(); device=next((x for x in devices if x["id"]==device_id),None)
+                    if not device:return self.send_json({"error":"设备不存在"},404)
+                    return self.send_json(collect_nvme_logs(device),201)
                 if path.startswith("/api/tasks/") and path.endswith("/stop"):
                     task=next((x for x in STATE["tasks"] if x["id"]==path.split("/")[3]),None)
                     if not task:return self.send_json({"error":"任务不存在"},404)
