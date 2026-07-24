@@ -27,21 +27,54 @@ DEFAULT_PLANS = [
     {"id":"plan-spike","name":"突发负载恢复测试","duration":8,"block_size":"4K","read_ratio":20,"queue_depth":128,"threshold_temp":72,"description":"高队列深度脉冲压力，关注延迟尖峰与恢复能力"},
 ]
 BLOCK_SIZES={"4K","8K","16K","32K","64K","128K","256K","1M"}
+IO_PATTERNS={"randrw","randread","randwrite","read","write"}
+VERIFY_MODES={"none","crc32c"}
+EXTRA_OPTION_RULES={
+    "thinktime":(0,1000000), "thinktime_blocks":(1,100000),
+    "iodepth_batch_submit":(1,1024), "iodepth_batch_complete_min":(1,1024),
+    "iodepth_batch_complete_max":(1,1024), "norandommap":(0,1), "refill_buffers":(0,1),
+}
+RANDOM_GENERATORS={"tausworthe","tausworthe64","lfsr"}
 
 def now(): return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 def is_linux(): return platform.system() == "Linux"
 def destructive_enabled(): return os.getenv("ENABLE_DESTRUCTIVE_FIO") == "1"
+def parse_extra_options(raw):
+    if not raw: return {}
+    if not isinstance(raw,str): raise ValueError("自定义参数必须为文本")
+    parsed={}
+    for line in raw.splitlines():
+        line=line.strip()
+        if not line: continue
+        if "=" not in line: raise ValueError("自定义参数必须使用 参数=值 格式")
+        key,value=(part.strip() for part in line.split("=",1))
+        if key in EXTRA_OPTION_RULES:
+            try: number=int(value)
+            except ValueError: raise ValueError(f"自定义参数 {key} 必须为整数")
+            low,high=EXTRA_OPTION_RULES[key]
+            if not low <= number <= high: raise ValueError(f"自定义参数 {key} 必须在 {low} 到 {high} 之间")
+            parsed[key]=number
+        elif key=="random_generator":
+            if value not in RANDOM_GENERATORS: raise ValueError("random_generator 仅支持 tausworthe、tausworthe64 或 lfsr")
+            parsed[key]=value
+        else: raise ValueError(f"不支持的自定义 fio 参数：{key}")
+    return parsed
 def resolve_test_config(plan, overrides):
     """合并预设与用户参数，并限制 fio 任务在可控范围内。"""
     overrides=overrides or {}
     try:
-        config={"duration":int(overrides.get("duration",plan["duration"])),"block_size":str(overrides.get("block_size",plan["block_size"])),"read_ratio":int(overrides.get("read_ratio",plan["read_ratio"])),"queue_depth":int(overrides.get("queue_depth",plan["queue_depth"])),"threshold_temp":int(overrides.get("threshold_temp",plan["threshold_temp"]))}
+        config={"duration":int(overrides.get("duration",plan["duration"])),"block_size":str(overrides.get("block_size",plan["block_size"])),"read_ratio":int(overrides.get("read_ratio",plan["read_ratio"])),"queue_depth":int(overrides.get("queue_depth",plan["queue_depth"])),"threshold_temp":int(overrides.get("threshold_temp",plan["threshold_temp"])),"io_pattern":str(overrides.get("io_pattern","randrw")),"num_jobs":int(overrides.get("num_jobs",1)),"ramp_time":int(overrides.get("ramp_time",0)),"rate_limit":int(overrides.get("rate_limit",0)),"verify":str(overrides.get("verify","none")),"extra_options":parse_extra_options(overrides.get("extra_options",""))}
     except (TypeError, ValueError): raise ValueError("测试参数格式不正确")
     if not 1 <= config["duration"] <= 720: raise ValueError("测试时长必须在 1 到 720 小时之间")
     if config["block_size"] not in BLOCK_SIZES: raise ValueError("不支持的块大小")
     if not 0 <= config["read_ratio"] <= 100: raise ValueError("读比例必须在 0% 到 100% 之间")
     if not 1 <= config["queue_depth"] <= 1024: raise ValueError("队列深度必须在 1 到 1024 之间")
     if not 35 <= config["threshold_temp"] <= 90: raise ValueError("温度阈值必须在 35°C 到 90°C 之间")
+    if config["io_pattern"] not in IO_PATTERNS: raise ValueError("不支持的 I/O 模式")
+    if not 1 <= config["num_jobs"] <= 32: raise ValueError("并发作业数必须在 1 到 32 之间")
+    if not 0 <= config["ramp_time"] <= 3600: raise ValueError("预热时间必须在 0 到 3600 秒之间")
+    if not 0 <= config["rate_limit"] <= 20000: raise ValueError("限速必须在 0 到 20000 MB/s 之间")
+    if config["verify"] not in VERIFY_MODES: raise ValueError("不支持的数据校验模式")
     return config
 def command(cmd):
     try: return subprocess.run(cmd, capture_output=True, text=True, timeout=12, check=False)
@@ -184,7 +217,11 @@ def fio_runner(task_id):
         task=next(x for x in STATE["tasks"] if x["id"]==task_id)
         if task["status"]!="运行中": return
         runtime=task["duration"]*3600
-        cmd=["fio",f"--name=enterprise-ssd-{task_id}",f"--filename={task['path']}","--direct=1","--ioengine=libaio","--time_based=1",f"--runtime={runtime}",f"--rw=randrw",f"--rwmixread={task['read_ratio']}",f"--bs={task['block_size']}",f"--iodepth={task['queue_depth']}","--numjobs=1","--group_reporting=1","--output-format=json"]
+        cmd=["fio",f"--name=enterprise-ssd-{task_id}",f"--filename={task['path']}","--direct=1","--ioengine=libaio","--time_based=1",f"--runtime={runtime}",f"--rw={task['io_pattern']}",f"--bs={task['block_size']}",f"--iodepth={task['queue_depth']}",f"--numjobs={task['num_jobs']}",f"--ramp_time={task['ramp_time']}","--group_reporting=1","--output-format=json"]
+        if task["io_pattern"]=="randrw": cmd.append(f"--rwmixread={task['read_ratio']}")
+        if task["rate_limit"]: cmd.append(f"--rate={task['rate_limit']}M")
+        if task["verify"]!="none": cmd.append(f"--verify={task['verify']}")
+        cmd.extend(f"--{key}={value}" for key,value in task.get("extra_options",{}).items())
         event(task,"信息",f"已启动 fio 裸盘测试：{task['path']}（该设备上的数据将被覆盖）"); persist()
     try: process=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True); PROCESSES[task_id]=process
     except OSError as exc:
@@ -248,9 +285,9 @@ class Handler(SimpleHTTPRequestHandler):
                         if not (is_linux() and shutil.which("fio") and destructive_enabled() and getattr(os,"geteuid",lambda:1)()==0): return self.send_json({"error":"真实压测要求 Linux、root、fio 与 ENABLE_DESTRUCTIVE_FIO=1"},403)
                         if not data.get("confirmed_device"): return self.send_json({"error":"请确认当前选择的是专用测试 SSD，且允许覆盖其数据"},403)
                     config=resolve_test_config(plan,data.get("config"))
-                    customized=any(config[key]!=plan[key] for key in config)
+                    customized=any(config[key]!=plan[key] for key in ("duration","block_size","read_ratio","queue_depth","threshold_temp")) or any(config[key]!=default for key,default in {"io_pattern":"randrw","num_jobs":1,"ramp_time":0,"rate_limit":0,"verify":"none","extra_options":{}}.items())
                     busy=any(t["status"] in ("运行中","停止中") for t in STATE["tasks"])
-                    task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"]+("（自定义参数）" if customized else ""),"duration":config["duration"],"block_size":config["block_size"],"read_ratio":config["read_ratio"],"queue_depth":config["queue_depth"],"threshold_temp":config["threshold_temp"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"排队中" if busy else "运行中","result":"--","started_at":None,"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[],"queued":busy}
+                    task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"]+("（自定义参数）" if customized else ""),"duration":config["duration"],"block_size":config["block_size"],"read_ratio":config["read_ratio"],"queue_depth":config["queue_depth"],"threshold_temp":config["threshold_temp"],"io_pattern":config["io_pattern"],"num_jobs":config["num_jobs"],"ramp_time":config["ramp_time"],"rate_limit":config["rate_limit"],"verify":config["verify"],"extra_options":config["extra_options"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"排队中" if busy else "运行中","result":"--","started_at":None,"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[],"queued":busy}
                     event(task,"信息","已有测试任务正在运行，任务已进入全局队列" if busy else "任务已创建");STATE["tasks"].insert(0,task)
                     if not busy: launch_task(task)
                     persist();return self.send_json(task,201)
