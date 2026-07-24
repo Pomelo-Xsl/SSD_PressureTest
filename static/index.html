@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SSD PressureTest · 企业级验证中心</title><link rel="stylesheet" href="styles.css">
+  <title>SSD PressureTest · 企业级验证中心</title><link rel="stylesheet" href="styles.css"><style>.device-confirm{display:flex;gap:8px;align-items:flex-start;margin:12px 0;padding:10px;border:1px solid #f5be98;border-radius:7px;background:#fff7ed;color:#9a3412;font-size:11px;line-height:1.5}.device-confirm input{margin:2px 0 0;accent-color:#ea580c}</style>
 </head>
 <body>
   <aside class="sidebar">
@@ -20,7 +20,7 @@
       <div class="setup-grid">
         <article class="step-card" id="devices"><div class="step-number">01</div><div class="step-title"><h3>选择企业级 SSD</h3><p>自动发现 Linux 物理磁盘</p></div><div class="device-list" id="deviceCards"></div></article>
         <article class="step-card" id="strategy"><div class="step-number">02</div><div class="step-title"><h3>选择压力策略</h3><p>按验证目标匹配负载</p></div><div class="plan-list" id="planCards"></div></article>
-        <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
+        <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><label id="deviceConfirmBox" class="device-confirm" hidden><input id="confirmDevice" type="checkbox"><span>我确认当前选中的 SSD 是专用测试盘，允许覆盖其数据。</span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
       </div>
     </section>
     <section class="monitor-grid">
