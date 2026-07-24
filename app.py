@@ -118,6 +118,21 @@ def load_state():
 STATE=load_state(); STATE.setdefault("plans",DEFAULT_PLANS); STATE.setdefault("tasks",[])
 def persist(): DATA_FILE.write_text(json.dumps({"plans":STATE["plans"],"tasks":STATE["tasks"]},ensure_ascii=False,indent=2),encoding="utf-8")
 def event(task,severity,text): task["events"].append({"time":now(),"severity":severity,"text":text}); task["events"]=task["events"][-50:]
+def recover_interrupted_tasks():
+    """服务重启后没有存活的线程或 fio 子进程，不能继续声明任务在运行。"""
+    changed=False
+    for task in STATE["tasks"]:
+        if task.get("status") in ("运行中", "停止中", "排队中"):
+            previous=task["status"]
+            task["status"]="已中断"; task["ended_at"]=now()
+            task["result"]="服务重启中断" if previous != "排队中" else "服务重启取消"
+            task.setdefault("events", [])
+            event(task,"警告",f"服务重启后未检测到可恢复的执行器，原状态“{previous}”任务已中断")
+            changed=True
+    if changed: persist()
+
+# 不自动恢复真实 fio 任务，避免服务重启后发生未经确认的裸盘写入。
+recover_interrupted_tasks()
 def sample_health(task):
     info=smart(task["path"],task["transport"].lower()); return {"time":now(),"temperature":info["temperature"],"p99":"--","throughput":"--","health":info["health"]}
 def launch_task(task):
