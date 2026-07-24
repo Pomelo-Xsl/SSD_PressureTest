@@ -7,6 +7,10 @@
 安全演示模式（不会写入磁盘）：
 
 ```bash
+sudo bash scripts/install_linux_dependencies.sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 python3 app.py
 ```
 

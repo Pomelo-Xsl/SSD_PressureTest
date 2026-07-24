@@ -1,0 +1,2 @@
+# 本项目后端仅使用 Python 标准库，当前不需要额外的 PyPI 依赖。
+# 保留此文件，方便统一执行：python -m pip install -r requirements.txt
