@@ -92,7 +92,7 @@ def collect_nvme_logs(device):
     if not shutil.which("nvme"): raise ValueError("未安装 nvme-cli，无法采集日志")
     stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
     folder=LOG_ROOT / f"{device['id']}_{stamp}"; folder.mkdir(parents=True,exist_ok=True)
-    jobs=[("全量 telemetry",["nvme","telemetry-log",controller,"-o",str(folder/"telemetry_full.log")]),("关键 telemetry",["nvme","telemetry-log",controller,"-c","-o",str(folder/"telemetry_critical.log")]),("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
+    jobs=[("全量 telemetry",["nvme","telemetry-log",controller,f"--output-file={folder/'telemetry_full.log'}"]),("关键 telemetry",["nvme","telemetry-log",controller,"-c",f"--output-file={folder/'telemetry_critical.log'}"]),("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
     results=[]
     for name,cmd in jobs:
         output_file=folder/"smart_c0.log" if "0xC0" in name else folder/"smart_ca.log" if "0xCA" in name else None
@@ -100,7 +100,10 @@ def collect_nvme_logs(device):
         except (OSError,subprocess.TimeoutExpired) as exc: results.append({"name":name,"ok":False,"message":str(exc)}); continue
         if output_file: output_file.write_text(result.stdout+("\n"+result.stderr if result.stderr else ""),encoding="utf-8")
         target=output_file or Path(cmd[-1])
-        results.append({"name":name,"ok":result.returncode==0,"file":str(target.relative_to(LOG_ROOT)) if target.exists() else None,"message":(result.stderr or result.stdout)[-300:]})
+        ok=result.returncode==0 and target.exists()
+        message=(result.stderr or result.stdout)[-300:] if not ok else ""
+        if result.returncode==0 and not target.exists(): message="nvme-cli 未生成日志文件，请检查 telemetry-log --help 的输出文件参数"
+        results.append({"name":name,"ok":ok,"file":str(target.relative_to(LOG_ROOT)) if target.exists() else None,"message":message})
     return {"controller":controller,"folder":str(folder.relative_to(LOG_ROOT)),"results":results}
 def flatten(items):
     for item in items:
