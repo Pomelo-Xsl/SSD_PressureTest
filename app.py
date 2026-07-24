@@ -120,8 +120,22 @@ def persist(): DATA_FILE.write_text(json.dumps({"plans":STATE["plans"],"tasks":S
 def event(task,severity,text): task["events"].append({"time":now(),"severity":severity,"text":text}); task["events"]=task["events"][-50:]
 def sample_health(task):
     info=smart(task["path"],task["transport"].lower()); return {"time":now(),"temperature":info["temperature"],"p99":"--","throughput":"--","health":info["health"]}
+def launch_task(task):
+    """锁内调用：同一块盘仅由此函数启动一个后台执行器。"""
+    task["status"]="运行中"; task["started_at"]=now()
+    event(task,"信息","排队任务已开始执行" if task.get("queued") else "任务已开始执行")
+    task["queued"]=False
+    runner=fio_runner if task["mode"]=="真实 fio 裸盘" else demo_runner
+    threading.Thread(target=runner,args=(task["id"],),daemon=True).start()
+
+def launch_next():
+    """锁内调用：全局只运行一个任务，按创建先后启动下一条。"""
+    if any(t["status"] in ("运行中","停止中") for t in STATE["tasks"]): return
+    next_task=next((t for t in reversed(STATE["tasks"]) if t["status"]=="排队中"),None)
+    if next_task: launch_task(next_task)
+
 def finish(task,result):
-    task["status"]="已完成"; task["ended_at"]=now(); task["result"]=result; event(task,"信息",f"测试完成，稳定性结论：{result}"); persist()
+    task["status"]="已完成"; task["ended_at"]=now(); task["result"]=result; event(task,"信息",f"测试完成，稳定性结论：{result}"); launch_next(); persist()
 
 def demo_runner(task_id):
     random.seed(task_id)
@@ -139,12 +153,14 @@ def demo_runner(task_id):
 
 def fio_runner(task_id):
     with LOCK:
-        task=next(x for x in STATE["tasks"] if x["id"]==task_id); runtime=task["duration"]*3600
+        task=next(x for x in STATE["tasks"] if x["id"]==task_id)
+        if task["status"]!="运行中": return
+        runtime=task["duration"]*3600
         cmd=["fio",f"--name=enterprise-ssd-{task_id}",f"--filename={task['path']}","--direct=1","--ioengine=libaio","--time_based=1",f"--runtime={runtime}",f"--rw=randrw",f"--rwmixread={task['read_ratio']}",f"--bs={task['block_size']}",f"--iodepth={task['queue_depth']}","--numjobs=1","--group_reporting=1","--output-format=json"]
         event(task,"信息",f"已启动 fio 裸盘测试：{task['path']}（该设备上的数据将被覆盖）"); persist()
     try: process=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True); PROCESSES[task_id]=process
     except OSError as exc:
-        with LOCK: task["status"]="失败"; task["result"]="执行器错误"; task["ended_at"]=now(); event(task,"严重",str(exc)); persist()
+        with LOCK: task["status"]="失败"; task["result"]="执行器错误"; task["ended_at"]=now(); event(task,"严重",str(exc)); launch_next(); persist()
         return
     started=time.time()
     while process.poll() is None:
@@ -158,9 +174,11 @@ def fio_runner(task_id):
             persist()
     stdout,stderr=process.communicate(); PROCESSES.pop(task_id,None)
     with LOCK:
+        if task["status"]=="停止中":
+            task["status"]="已停止"; task["ended_at"]=now(); task["result"]="人工终止"; event(task,"警告","fio 进程已停止"); launch_next(); persist(); return
         if task["status"]=="已停止": return
         if process.returncode:
-            task["status"]="失败"; task["result"]="fio 执行失败"; task["ended_at"]=now(); event(task,"严重",(stderr or "fio 返回异常")[-300:]); persist(); return
+            task["status"]="失败"; task["result"]="fio 执行失败"; task["ended_at"]=now(); event(task,"严重",(stderr or "fio 返回异常")[-300:]); launch_next(); persist(); return
         try:
             job=json.loads(stdout)["jobs"][0]; p99=max(job["read"].get("clat_ns",{}).get("percentile",{}).get("99.000000",0),job["write"].get("clat_ns",{}).get("percentile",{}).get("99.000000",0))/1e6; bw=(job["read"].get("bw_bytes",0)+job["write"].get("bw_bytes",0))/1e6
             task["samples"].append({"time":now(),"temperature":"--","p99":round(p99,2),"throughput":round(bw,1),"health":"--"})
@@ -202,15 +220,22 @@ class Handler(SimpleHTTPRequestHandler):
                         phrase=f"ERASE {device['path']}"
                         if not (is_linux() and shutil.which("fio") and destructive_enabled() and getattr(os,"geteuid",lambda:1)()==0): return self.send_json({"error":"真实压测要求 Linux、root、fio 与 ENABLE_DESTRUCTIVE_FIO=1"},403)
                         if data.get("confirmation")!=phrase:return self.send_json({"error":f"确认短语不正确，应为：{phrase}"},403)
-                    task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"],"duration":plan["duration"],"block_size":plan["block_size"],"read_ratio":plan["read_ratio"],"queue_depth":plan["queue_depth"],"threshold_temp":plan["threshold_temp"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"运行中","result":"--","started_at":now(),"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[]}
-                    event(task,"信息","任务已创建" if mode=="real" else "安全演示任务已启动：只生成模拟遥测数据");STATE["tasks"].insert(0,task);persist();threading.Thread(target=fio_runner if mode=="real" else demo_runner,args=(task["id"],),daemon=True).start();return self.send_json(task,201)
+                    busy=any(t["status"] in ("运行中","停止中") for t in STATE["tasks"])
+                    task={"id":uuid.uuid4().hex[:8],"name":f"{device['name']} · {plan['name']}","device":device["name"],"serial":device["serial"],"path":device["path"],"transport":device["interface"],"plan":plan["name"],"duration":plan["duration"],"block_size":plan["block_size"],"read_ratio":plan["read_ratio"],"queue_depth":plan["queue_depth"],"threshold_temp":plan["threshold_temp"],"mode":"真实 fio 裸盘" if mode=="real" else "安全演示","status":"排队中" if busy else "运行中","result":"--","started_at":None,"ended_at":None,"elapsed":0,"progress":0,"samples":[],"events":[],"queued":busy}
+                    event(task,"信息","已有测试任务正在运行，任务已进入全局队列" if busy else "任务已创建");STATE["tasks"].insert(0,task)
+                    if not busy: launch_task(task)
+                    persist();return self.send_json(task,201)
                 if path.startswith("/api/tasks/") and path.endswith("/stop"):
                     task=next((x for x in STATE["tasks"] if x["id"]==path.split("/")[3]),None)
                     if not task:return self.send_json({"error":"任务不存在"},404)
-                    if task["status"]=="运行中":
+                    if task["status"]=="排队中":
+                        task["status"]="已停止";task["ended_at"]=now();task["result"]="已取消";event(task,"信息","排队任务已取消");persist()
+                    elif task["status"]=="运行中":
                         process=PROCESSES.get(task["id"]);
-                        if process: process.terminate()
-                        task["status"]="已停止";task["ended_at"]=now();task["result"]="人工终止";event(task,"警告","任务由操作员停止");persist()
+                        if task["mode"]=="真实 fio 裸盘" and process:
+                            task["status"]="停止中";event(task,"警告","正在终止 fio 进程，设备释放后将继续下一条任务");process.terminate();persist()
+                        else:
+                            task["status"]="已停止";task["ended_at"]=now();task["result"]="人工终止";event(task,"警告","任务由操作员停止");launch_next();persist()
                     return self.send_json(task)
             return self.send_json({"error":"接口不存在"},404)
         except (json.JSONDecodeError,KeyError,ValueError) as exc:return self.send_json({"error":f"请求无效：{exc}"},400)
