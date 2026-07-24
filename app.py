@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import random
+import re
 import shutil
 import subprocess
 import threading
@@ -37,20 +38,33 @@ def flatten(items):
         yield item
         yield from flatten(item.get("children", []))
 
+def celsius(value):
+    """将 smart-log 返回的温度统一为摄氏度。
+
+    NVMe SMART 的温度字段规范为 Kelvin；部分 nvme-cli JSON 会直接返回
+    数值（例如 306），此前被界面错误标作 306°C。
+    """
+    if value in (None, "", "--"): return "--"
+    match=re.search(r"-?\d+(?:\.\d+)?", str(value))
+    if not match: return "--"
+    temperature=float(match.group())
+    if 200 <= temperature <= 450: temperature-=273.15
+    return round(temperature, 1)
+
 def smart(path, transport):
     """读取可选的 NVMe / SMART 遥测；工具缺失或无权限时保留 --。"""
     info={"health":"--","temperature":"--"}
     result = command(["nvme","smart-log",path,"-o","json"]) if transport == "nvme" and shutil.which("nvme") else None
     if result and result.returncode == 0:
         try:
-            data=json.loads(result.stdout); info["temperature"]=data.get("temperature", "--")
+            data=json.loads(result.stdout); info["temperature"]=celsius(data.get("temperature", "--"))
             info["health"]=data.get("percentage_used", 0); info["health"]=max(0,100-int(info["health"]))
             return info
         except (ValueError, TypeError): pass
     result = command(["smartctl","-A","-j",path]) if shutil.which("smartctl") else None
     if result and result.stdout:
         try:
-            data=json.loads(result.stdout); info["temperature"]=data.get("temperature",{}).get("current","--")
+            data=json.loads(result.stdout); info["temperature"]=celsius(data.get("temperature",{}).get("current","--"))
             info["health"]=100 if data.get("smart_status",{}).get("passed") else "--"
         except (ValueError, TypeError): pass
     return info
@@ -58,6 +72,7 @@ def smart(path, transport):
 def testability(disk):
     """返回裸盘压力测试的准入结果；检查整块盘及其全部子分区。"""
     descendants=list(flatten([disk]))
+    partitions=[item.get("name") for item in descendants[1:] if item.get("type")=="part"]
     mountpoints=[]
     for item in descendants:
         mountpoints.extend(m for m in (item.get("mountpoints") or []) if m)
@@ -67,6 +82,8 @@ def testability(disk):
         reasons.append("检测为机械旋转盘，非 SSD")
     if str(disk.get("ro")) in ("1", "True", "true"):
         reasons.append("设备为只读状态")
+    if partitions:
+        reasons.append("磁盘含有分区，禁止裸盘测试")
     if mountpoints:
         if any(m in ("/", "/boot", "/boot/efi", "[SWAP]") for m in mountpoints):
             reasons.append("包含系统盘、启动盘或交换分区")
