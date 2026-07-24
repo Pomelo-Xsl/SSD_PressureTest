@@ -86,14 +86,33 @@ def nvme_controller(path):
     """将 namespace 路径 /dev/nvmeXnY 转换为控制器路径 /dev/nvmeX。"""
     match=re.fullmatch(r"(/dev/nvme\d+)(?:n\d+)?", path)
     return match.group(1) if match else None
+def collect_telemetry(controller, output_file, critical=False):
+    """兼容不同 nvme-cli 版本的 telemetry 输出文件参数。"""
+    critical_args=["-c"] if critical else []
+    candidates=[
+        ["nvme","telemetry-log",controller,*critical_args,"-o",str(output_file)],
+        ["nvme","telemetry-log",controller,*critical_args,"--output-file",str(output_file)],
+        ["nvme","telemetry-log",controller,*critical_args,f"--output-file={output_file}"],
+    ]
+    errors=[]
+    for cmd in candidates:
+        output_file.unlink(missing_ok=True)
+        try: result=subprocess.run(cmd,capture_output=True,text=True,timeout=180,check=False)
+        except (OSError,subprocess.TimeoutExpired) as exc: errors.append(f"{' '.join(cmd)}：{exc}"); continue
+        if result.returncode==0 and output_file.is_file() and output_file.stat().st_size>0: return True,""
+        errors.append(f"{' '.join(cmd)}：{(result.stderr or result.stdout or '未生成文件').strip()[-180:]}")
+    return False," | ".join(errors)
 def collect_nvme_logs(device):
     controller=nvme_controller(device["path"])
     if not controller: raise ValueError("仅支持 NVMe 设备日志采集")
     if not shutil.which("nvme"): raise ValueError("未安装 nvme-cli，无法采集日志")
     stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
     folder=LOG_ROOT / f"{device['id']}_{stamp}"; folder.mkdir(parents=True,exist_ok=True)
-    jobs=[("全量 telemetry",["nvme","telemetry-log",controller,f"--output-file={folder/'telemetry_full.log'}"]),("关键 telemetry",["nvme","telemetry-log",controller,"-c",f"--output-file={folder/'telemetry_critical.log'}"]),("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
     results=[]
+    for name,filename,critical in [("全量 telemetry","telemetry_full.log",False),("关键 telemetry","telemetry_critical.log",True)]:
+        target=folder/filename; ok,message=collect_telemetry(controller,target,critical)
+        results.append({"name":name,"ok":ok,"file":str(target.relative_to(LOG_ROOT)) if ok else None,"message":message})
+    jobs=[("扩展 SMART 0xC0",["nvme","get-log",controller,"-i","0xC0","-l","1024"]),("扩展 SMART 0xCA",["nvme","get-log",controller,"-i","0xCA","-l","348"])]
     for name,cmd in jobs:
         output_file=folder/"smart_c0.log" if "0xC0" in name else folder/"smart_ca.log" if "0xCA" in name else None
         try: result=subprocess.run(cmd,capture_output=True,text=True,timeout=180,check=False)
