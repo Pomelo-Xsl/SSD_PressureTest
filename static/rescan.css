@@ -1,0 +1,5 @@
+.device-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.scan-button { flex:none; border:1px solid #bfdbfe; background:#fff; color:#2563eb; border-radius:6px; padding:6px 8px; font-size:10px; font-weight:750; cursor:pointer; }
+.scan-button:hover { background:#eff6ff; }
+.scan-button:disabled { opacity:.65; cursor:wait; }
+.scan-status { min-height:15px; margin:-9px 0 9px; color:#66758f; font-size:10px; line-height:1.4; }
