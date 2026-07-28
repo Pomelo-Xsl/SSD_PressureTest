@@ -22,6 +22,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from zoneinfo import ZoneInfo
 
+from analysis_engine import analyze_task
+from report_builder import build_report
+
 ROOT, DATA_FILE = Path(__file__).parent, Path(__file__).parent / "data.json"
 LOG_ROOT = ROOT / "logs"
 LOCK, PROCESSES = threading.Lock(), {}
@@ -337,8 +340,8 @@ class Handler(SimpleHTTPRequestHandler):
             with LOCK:
                 task=next((x for x in STATE["tasks"] if x["id"]==path.rsplit("/",1)[-1]),None)
                 if not task:return self.send_json({"error":"任务不存在"},404)
-                rows="".join(f"<li><b>{e['time']} [{e['severity']}]</b> {e['text']}</li>" for e in task["events"]); last=task["samples"][-1] if task["samples"] else {}
-            page=f"<!doctype html><meta charset=utf-8><title>SSD 测试报告</title><style>body{{font:15px Arial;margin:48px;color:#172033}}h1{{color:#1d4ed8}}.c{{border:1px solid #dbe2ef;padding:18px;border-radius:10px;margin:16px 0}}</style><h1>企业级 SSD 稳定性与耐久测试报告</h1><p>生成：{now()} | 模式：{task['mode']}</p><div class=c>设备：{task['device']}（{task['serial']}）<br>路径：{task['path']}<br>策略：{task['plan']} / {task['duration']} 小时<br>结论：{task['status']} / {task['result']}<br>最后遥测：温度 {last.get('temperature','--')}°C，P99 {last.get('p99','--')}ms，吞吐 {last.get('throughput','--')}MB/s</div><div class=c><h2>事件</h2><ul>{rows}</ul></div>".encode()
+                analysis=analyze_task(task,STATE["tasks"])
+                page=build_report(task,analysis,now())
             self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.send_header("Content-Disposition",'attachment; filename="enterprise-ssd-report.html"');self.send_header("Content-Length",str(len(page)));self.end_headers();return self.wfile.write(page)
         return super().do_GET()
     def do_POST(self):
