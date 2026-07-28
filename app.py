@@ -16,10 +16,11 @@ import threading
 import time
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
+from zoneinfo import ZoneInfo
 
 ROOT, DATA_FILE = Path(__file__).parent, Path(__file__).parent / "data.json"
 LOG_ROOT = ROOT / "logs"
@@ -39,7 +40,15 @@ EXTRA_OPTION_RULES={
 }
 RANDOM_GENERATORS={"tausworthe","tausworthe64","lfsr"}
 
-def now(): return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+def now():
+    """Return the system-visible timestamp in China Standard Time (UTC+8)."""
+    return datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+def timestamp():
+    """Return a filesystem-safe Beijing-time timestamp for log directories."""
+    return datetime.now(BEIJING_TZ).strftime("%Y%m%d_%H%M%S")
 def is_linux(): return platform.system() == "Linux"
 def destructive_enabled(): return os.getenv("ENABLE_DESTRUCTIVE_FIO") == "1"
 def parse_extra_options(raw):
@@ -106,7 +115,7 @@ def collect_nvme_logs(device):
     controller=nvme_controller(device["path"])
     if not controller: raise ValueError("仅支持 NVMe 设备日志采集")
     if not shutil.which("nvme"): raise ValueError("未安装 nvme-cli，无法采集日志")
-    stamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp=timestamp()
     folder=LOG_ROOT / f"{device['id']}_{stamp}"; folder.mkdir(parents=True,exist_ok=True)
     results=[]
     for name,filename,critical in [("全量 telemetry","telemetry_full.log",False),("关键 telemetry","telemetry_critical.log",True)]:
