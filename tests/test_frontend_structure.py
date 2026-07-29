@@ -63,6 +63,11 @@ class FrontendStructureTests(unittest.TestCase):
     def test_task_delete_has_no_visible_hint(self):
         self.assertNotIn('右键删除此历史任务', self.script)
 
+    def test_dashboard_metric_cards_navigate_to_their_work_pages(self):
+        self.assertIn("METRIC_PAGE_MAP=['devices','tasks','tasks','devices']", self.script)
+        self.assertIn("makeDashboardMetricsNavigable", self.script)
+        self.assertIn("navigateTo(card.dataset.navigateTo)", self.script)
+
 
 if __name__ == '__main__':
     unittest.main()

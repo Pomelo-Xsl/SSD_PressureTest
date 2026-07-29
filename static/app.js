@@ -1,4 +1,10 @@
 let state={},selectedDevice=null,selectedPlan=null,configPlanId=null;
+const METRIC_PAGE_MAP=['devices','tasks','tasks','devices'];
+const METRIC_PAGE_LABELS=['查看已发现的物理磁盘','查看当前运行的测试任务','查看等待执行的测试队列','查看通过准入检查的 SSD'];
+function makeDashboardMetricsNavigable(){document.querySelectorAll('#metrics .metric').forEach((card,index)=>{const page=METRIC_PAGE_MAP[index];if(!page)return;card.dataset.navigateTo=page;card.setAttribute('role','button');card.setAttribute('tabindex','0');card.setAttribute('aria-label',METRIC_PAGE_LABELS[index]);card.style.cursor='pointer'})}
+document.addEventListener('click',event=>{const card=event.target.closest('#metrics .metric[data-navigate-to]');if(card)navigateTo(card.dataset.navigateTo)});
+document.addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&event.target.matches('#metrics .metric[data-navigate-to]')){event.preventDefault();navigateTo(event.target.dataset.navigateTo)}});
+const metricContainer=document.querySelector('#metrics');if(metricContainer)new MutationObserver(makeDashboardMetricsNavigable).observe(metricContainer,{childList:true});
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(url,options){const r=await fetch(url,options),data=await r.json();if(!r.ok)throw Error(data.error||'操作失败');return data}
 function activeTask(){return state.tasks?.find(t=>t.status==='运行中')||state.tasks?.[0]}
