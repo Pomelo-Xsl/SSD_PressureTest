@@ -40,9 +40,9 @@ class FrontendStructureTests(unittest.TestCase):
 
     def test_terminal_tasks_offer_a_delete_action(self):
         self.assertIn("['已完成','已停止','失败','已中断'].includes(t.status)", self.script)
-        self.assertIn('delete-reveal', self.script)
-        self.assertIn('function beginTaskSwipe', self.script)
-        self.assertIn('function endTaskSwipe', self.script)
+        self.assertIn('onclick="deleteTask', self.script)
+        self.assertNotIn('function beginTaskSwipe', self.script)
+        self.assertNotIn('function endTaskSwipe', self.script)
         self.assertIn("/api/tasks/${id}/delete", self.script)
 
 
