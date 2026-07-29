@@ -177,6 +177,15 @@ class OperationsStore:
         with self.connect() as connection:
             connection.execute('UPDATE alert_records SET status=?, acknowledged_at=? WHERE alert_id=?', ('已确认', acknowledged_at, alert_id))
 
+    def delete_task_records(self, task_id):
+        with self.connect() as connection:
+            removed_notifications = connection.execute('DELETE FROM notification_outbox WHERE alert_id IN (SELECT alert_id FROM alert_records WHERE task_id=?)', (task_id,)).rowcount
+            removed_alerts = connection.execute('DELETE FROM alert_records WHERE task_id=?', (task_id,)).rowcount
+            removed_samples = connection.execute('DELETE FROM metric_samples WHERE task_id=?', (task_id,)).rowcount
+            removed_batch_items = connection.execute('DELETE FROM test_batch_items WHERE task_id=?', (task_id,)).rowcount
+            removed_results = connection.execute('DELETE FROM test_results WHERE task_id=?', (task_id,)).rowcount
+        return {'results': removed_results, 'samples': removed_samples, 'alerts': removed_alerts, 'notifications': removed_notifications, 'batch_items': removed_batch_items}
+
     def enqueue_notifications(self, notifications):
         if not notifications:
             return 0

@@ -16,6 +16,7 @@
     <p class="nav-label">工作台</p>
     <nav>
       <a class="active" data-page="dashboard" href="#dashboard"><span>▦</span>测试概览</a>
+      <a data-page="monitoring" href="#monitoring"><span>◔</span>实时监测</a>
       <a data-page="devices" href="#devices"><span>▣</span>设备选择</a>
       <a data-page="strategy" href="#strategy"><span>◌</span>压力策略</a>
       <a data-page="tasks" href="#tasks"><span>☷</span>任务记录</a>
@@ -33,7 +34,11 @@
       <section class="environment" id="notice"></section>
       <section class="panel diagnostics-panel"><div class="panel-head"><div><h2>运行环境自检</h2><p>检查 Linux、权限、fio 与诊断工具；真实裸盘测试前请确认所有必需项通过。</p></div><span id="archiveCount" class="step-counter">归档任务：--</span></div><div id="diagnosticsChecks" class="diagnostics-checks"></div></section>
       <section class="metrics" id="metrics"></section>
-      <section class="monitor-grid">
+    </section>
+
+    <section class="app-page" data-page="monitoring" id="monitoring" hidden>
+      <header class="page-header"><div><p class="eyebrow">LIVE TELEMETRY · EVENT STREAM</p><h1>实时监测</h1><p class="muted">查看运行中任务的温度、P99 延迟走势，以及最新异常和操作事件。</p></div><button class="text-button" onclick="refresh()">↻ 刷新数据</button></header>
+      <section class="monitor-grid monitoring-page-grid">
         <article class="panel telemetry"><div class="panel-head"><div><h2>实时遥测</h2><p id="telemetryName">等待任务启动</p></div><span class="live-dot">● LIVE</span></div><div class="chart-key"><span><i class="orange"></i>温度</span><span><i class="blue"></i>P99 延迟</span></div><div id="chart" class="chart"></div></article>
         <article class="panel events-panel"><div class="panel-head"><div><h2>异常与事件</h2><p>优先显示需要关注的信息</p></div></div><div id="events" class="events"></div></article>
       </section>

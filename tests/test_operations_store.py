@@ -63,6 +63,21 @@ class OperationsStoreTests(unittest.TestCase):
         self.assertTrue(self.store.mark_notification(rows[0]['id'], '已发送', '2026-07-29 10:01:00'))
         self.assertEqual(self.store.list_notifications()[0]['status'], '已发送')
 
+    def test_delete_task_records_removes_task_bound_history(self):
+        task = {'id': 'task-delete', 'device': 'Enterprise NVMe', 'path': '/dev/nvme1n1', 'plan': '稳定性验证', 'mode': '安全演示', 'status': '已完成', 'progress': 100}
+        self.store.archive_result(task, {'conclusion': '通过', 'score': 90, 'risk_level': '低风险'}, '<html>report</html>', '2026-07-29 10:10:00')
+        self.store.append_metric_sample('task-delete', {'time': '2026-07-29 10:00:00', 'temperature': 62}, '稳定负载')
+        self.store.upsert_alert_record({'id': 'alert-delete', 'task_id': 'task-delete', 'severity': '警告', 'time': '2026-07-29 10:01:00', 'text': '温度偏高'})
+        self.store.enqueue_notifications([{'alert_id': 'alert-delete', 'channel': 'web', 'created_at': '2026-07-29 10:01:00', 'payload': {}}])
+        removed = self.store.delete_task_records('task-delete')
+        self.assertEqual(removed['results'], 1)
+        self.assertEqual(removed['samples'], 1)
+        self.assertEqual(removed['alerts'], 1)
+        self.assertEqual(removed['notifications'], 1)
+        self.assertIsNone(self.store.report_snapshot('task-delete'))
+        self.assertEqual(self.store.task_metric_samples('task-delete'), [])
+        self.assertEqual(self.store.list_alert_records(task_id='task-delete'), [])
+
 
 class TelemetryRuleTests(unittest.TestCase):
 

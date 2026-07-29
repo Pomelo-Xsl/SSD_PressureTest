@@ -12,13 +12,14 @@ class FrontendStructureTests(unittest.TestCase):
         self.script = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
 
     def test_navigation_targets_are_separate_work_pages(self):
-        for page in ('dashboard', 'devices', 'strategy', 'tasks', 'operations'):
+        for page in ('dashboard', 'monitoring', 'devices', 'strategy', 'tasks', 'operations'):
             self.assertIn('data-page="{0}"'.format(page), self.html)
             self.assertIn('href="#{0}"'.format(page), self.html)
-        self.assertEqual(self.html.count('class="app-page"'), 5)
+        self.assertEqual(self.html.count('class="app-page"'), 6)
 
     def test_device_logs_and_task_governance_have_dedicated_page_content(self):
         self.assertIn('NVMe 盘片日志与扩展 SMART', self.html)
+        self.assertIn('实时监测', self.html)
         self.assertIn('任务记录', self.html)
         self.assertIn('运维管理', self.html)
         self.assertIn('id="deviceCards"', self.html)
@@ -36,6 +37,11 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn('renderOperationsFromState()', acknowledgement)
         self.assertIn("api('/api/alerts').then", acknowledgement)
         self.assertNotIn('refresh()', acknowledgement)
+
+    def test_terminal_tasks_offer_a_delete_action(self):
+        self.assertIn("['已完成','已停止','失败','已中断'].includes(t.status)", self.script)
+        self.assertIn('onclick="deleteTask', self.script)
+        self.assertIn("/api/tasks/${id}/delete", self.script)
 
 
 if __name__ == '__main__':

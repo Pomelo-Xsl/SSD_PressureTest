@@ -931,6 +931,23 @@ class Handler(SimpleHTTPRequestHandler):
                             start_next_queued_task()
                             persist_test_workspace_state()
                     return self.send_json(task)
+                if path.startswith('/api/tasks/') and path.endswith('/delete'):
+                    task_id = path.removeprefix('/api/tasks/').removesuffix('/delete').strip('/')
+                    task = next((item for item in STATE['tasks'] if item.get('id') == task_id), None)
+                    if not task:
+                        return self.send_json({'error': '任务不存在'}, 404)
+                    if task.get('status') not in ('已完成', '已停止', '失败', '已中断'):
+                        return self.send_json({'error': '运行中、停止中或排队中的任务不能删除，请先停止或取消任务'}, 409)
+                    removed_records = STORE.delete_task_records(task_id)
+                    TIME_SERIES.clear_series(task_id)
+                    evidence_file = EVIDENCE_ROOT / '{0}.zip'.format(task_id)
+                    if evidence_file.exists():
+                        evidence_file.unlink()
+                    STATE['tasks'].remove(task)
+                    deleted_at = beijing_time_string()
+                    STORE.record_audit(deleted_at, 'task_deleted', '信息', {'task_name': task.get('name'), 'status': task.get('status'), 'removed_records': removed_records}, task_id, task.get('path'))
+                    persist_test_workspace_state()
+                    return self.send_json({'deleted_task_id': task_id, 'deleted_at': deleted_at, 'removed_records': removed_records})
                 if path.startswith('/api/tasks/') and path.endswith('/priority'):
                     task = next((item for item in STATE['tasks'] if item['id'] == path.split('/')[3]), None)
                     if not task:
