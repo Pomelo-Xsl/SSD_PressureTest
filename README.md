@@ -30,6 +30,38 @@ python3 app.py
 - NVMe 诊断日志采集：全量/关键 telemetry，以及 `0xC0`、`0xCA` 扩展 SMART 日志，可从页面下载
 - 全局串行任务队列：任意时刻仅运行一个 SSD 压测任务，其他任务按创建顺序自动排队
 - 服务启动恢复：重启后原本运行、停止中或排队中的任务会标记为“已中断”，不会自动恢复破坏性 fio 写盘
+- SQLite 结果归档：已完成、停止、失败和服务重启中断的任务会写入 `results.db`，保存原始任务快照、分析结果和 HTML 报告快照
+- 任务记录支持状态/关键字筛选，并可导出全部任务摘要 CSV
+- 运行环境自检：识别 Linux 内核、root 权限、fio、nvme-cli、smartmontools 与破坏性模式开关状态
+- 遥测规则：温度、P99 延迟与吞吐衰减按统一规则生成可审计的告警事件
+- 分阶段策略模型：新建任务会记录预热、主负载、恢复观察阶段以及 IOPS/限速/写入量估算
+- 操作审计：任务创建、开始、停止、告警和完成事件同步写入 SQLite 审计表
+- 时序遥测归档：温度、P99、吞吐与健康度在内存趋势缓存和 SQLite 中双重保存，支持按时间段、阶段、指标查询与 min/max 降采样
+- 告警闭环：告警拥有稳定编号，确认状态与待发送通知队列持久化；自定义告警策略可绑定到新建任务
+- 报告证据完整度：HTML 报告增加采样质量、阶段执行证据、资产快照基线和告警处置闭环，并在证据 ZIP 中提供结构化 JSON
+
+## 测试结果数据库
+
+系统使用 Python 标准库 SQLite，无需额外安装数据库服务。项目目录下的 `results.db` 会自动创建，建议在服务器上定期备份该文件。
+
+- `test_results` 表：按任务编号保存设备信息、测试配置、状态、结论、评分、风险等级和时间信息；
+- `result_json`：原始任务、遥测采样和事件记录快照；
+- `analysis_json`：稳定性分析算法的结构化结果；
+- `report_html`：任务结束时生成的 HTML 报告快照。
+
+可使用以下接口读取归档结果：
+
+```text
+GET /api/results
+GET /api/results/<任务编号>/report
+GET /api/audit-events
+GET /api/tasks/<任务编号>/telemetry?metric=temperature&max_points=240
+GET /api/tasks/<任务编号>/report-evidence
+GET /api/alerts
+GET /api/notifications
+```
+
+其中 `telemetry` 接口返回按时间排序的标准化时序点、降采样结果及缺失间隔/完整性统计；`report-evidence` 返回报告使用的阶段、数据质量、资产历史和告警闭环依据。通知队列只记录待发送与处置状态，系统不会未经配置向外部地址发送消息。
 
 ## 真实 fio 压测：严重安全警告
 

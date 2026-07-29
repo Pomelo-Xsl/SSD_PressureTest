@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+results.db
+results.db-shm
+results.db-wal
+logs/
+backups/
+evidence/
+data.json
+.docx_*/
+*.docx
+~$*.docx
+build_softcopyright_manual.py
+replace_manual_images.py
+transform_reference_to_ssd_manual.py
