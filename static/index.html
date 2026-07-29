@@ -19,6 +19,7 @@
       <a data-page="devices" href="#devices"><span>▣</span>设备选择</a>
       <a data-page="strategy" href="#strategy"><span>◌</span>压力策略</a>
       <a data-page="tasks" href="#tasks"><span>☷</span>任务记录</a>
+      <a data-page="operations" href="#operations"><span>⚙</span>运维管理</a>
     </nav>
     <div class="side-safety"><span>⌁</span><div><b>安全保护已启用</b><small>已挂载设备禁止裸盘测试</small></div></div>
   </aside>
@@ -55,8 +56,12 @@
     </section>
 
     <section class="app-page" data-page="tasks" id="tasks" hidden>
-      <header class="page-header"><div><p class="eyebrow">TASKS · HISTORY · GOVERNANCE</p><h1>任务记录与运维治理</h1><p class="muted">查看执行队列、历史报告、告警、批次和操作审计。</p></div><button class="text-button" onclick="refresh()">↻ 刷新数据</button></header>
+      <header class="page-header"><div><p class="eyebrow">TASKS · HISTORY</p><h1>任务记录</h1><p class="muted">查看执行队列、历史报告与每个测试任务的当前状态。</p></div><button class="text-button" onclick="refresh()">↻ 刷新数据</button></header>
       <section class="panel task-panel"><div class="panel-head"><div><h2>测试任务</h2><p>按设备、状态快速定位任务；可导出当前全部任务摘要。</p></div><div class="task-tools"><input id="taskKeyword" type="search" placeholder="搜索设备、序列号或策略" oninput="renderDashboard()"><select id="taskStatusFilter" onchange="renderDashboard()"><option value="全部">全部状态</option><option value="运行中">运行中</option><option value="排队中">排队中</option><option value="已完成">已完成</option><option value="已停止">已停止</option><option value="失败">失败</option></select><a class="text-button" href="/api/tasks/export.csv">↓ 导出 CSV</a></div></div><div class="table-wrap"><table><thead><tr><th>设备与策略</th><th>模式</th><th>开始时间（北京时间）</th><th>进度</th><th>状态</th><th>结论</th><th>操作</th></tr></thead><tbody id="tasksBody"></tbody></table></div></section>
+    </section>
+
+    <section class="app-page" data-page="operations" id="operations" hidden>
+      <header class="page-header"><div><p class="eyebrow">OPERATIONS · GOVERNANCE</p><h1>运维管理</h1><p class="muted">集中处理告警、批次执行、操作审计与数据库维护状态。</p></div><button class="text-button" onclick="loadOperations()">↻ 更新治理数据</button></header>
       <section class="panel operations-panel"><div class="panel-head"><div><h2>运维与治理中心</h2><p>集中查看设备风险、队列、告警、批次、审计和数据库维护状态。</p></div><button class="text-button" onclick="loadOperations()">↻ 更新治理数据</button></div><div id="operationsSummary" class="operations-grid"></div><div class="operations-columns"><div><h3>待确认告警</h3><div id="alertsList" class="operations-list"></div></div><div><h3>测试批次</h3><div id="batchesList" class="operations-list"></div></div><div><h3>最近审计</h3><div id="auditList" class="operations-list"></div></div></div></section>
     </section>
   </main>
