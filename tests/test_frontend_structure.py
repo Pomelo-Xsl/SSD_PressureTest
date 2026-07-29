@@ -1,0 +1,33 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class FrontendStructureTests(unittest.TestCase):
+
+    def setUp(self):
+        self.html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+        self.script = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
+
+    def test_navigation_targets_are_separate_work_pages(self):
+        for page in ('dashboard', 'devices', 'strategy', 'tasks'):
+            self.assertIn('data-page="{0}"'.format(page), self.html)
+            self.assertIn('href="#{0}"'.format(page), self.html)
+        self.assertEqual(self.html.count('class="app-page"'), 4)
+
+    def test_device_logs_and_task_governance_have_dedicated_page_content(self):
+        self.assertIn('NVMe 盘片日志与扩展 SMART', self.html)
+        self.assertIn('任务记录与运维治理', self.html)
+        self.assertIn('id="deviceCards"', self.html)
+        self.assertIn('id="tasksBody"', self.html)
+
+    def test_hash_router_exposes_explicit_navigation(self):
+        self.assertIn('function applyRoute()', self.script)
+        self.assertIn('function navigateTo(page)', self.script)
+        self.assertIn("window.addEventListener('hashchange'", self.script)
+
+
+if __name__ == '__main__':
+    unittest.main()

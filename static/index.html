@@ -1,36 +1,65 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SSD PressureTest · 企业级验证中心</title>
   <link rel="stylesheet" href="rescan.css">
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SSD PressureTest · 企业级验证中心</title><link rel="stylesheet" href="styles.css"><style>.device-confirm{display:flex;gap:8px;align-items:flex-start;margin:12px 0;padding:10px;border:1px solid #f5be98;border-radius:7px;background:#fff7ed;color:#9a3412;font-size:11px;line-height:1.5}.device-confirm input{margin:2px 0 0;accent-color:#ea580c}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e7edf5}.config-grid label{font-size:10px;color:#52637d;font-weight:700}.config-grid input,.config-grid select{display:block;width:100%;padding:7px;margin-top:4px;border:1px solid #d8e1ee;border-radius:5px;background:#fff;color:#172033;font-size:12px}</style>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .device-confirm{display:flex;gap:8px;align-items:flex-start;margin:12px 0;padding:10px;border:1px solid #f5be98;border-radius:7px;background:#fff7ed;color:#9a3412;font-size:11px;line-height:1.5}.device-confirm input{margin:2px 0 0;accent-color:#ea580c}.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e7edf5}.config-grid label{font-size:10px;color:#52637d;font-weight:700}.config-grid input,.config-grid select,.config-grid textarea{display:block;width:100%;padding:7px;margin-top:4px;border:1px solid #d8e1ee;border-radius:5px;background:#fff;color:#172033;font-size:12px;font-family:inherit}.config-grid small{display:block;margin-top:5px;font-weight:400;line-height:1.45}
+  </style>
 </head>
 <body>
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">◈</span><div>SSD PressureTest<small>Enterprise Linux Validation</small></div></div>
     <p class="nav-label">工作台</p>
-    <nav><a class="active" href="#dashboard"><span>▦</span>测试概览</a><a href="#devices"><span>▣</span>设备选择</a><a href="#strategy"><span>◌</span>压力策略</a><a href="#tasks"><span>☷</span>任务记录</a></nav>
+    <nav>
+      <a class="active" data-page="dashboard" href="#dashboard"><span>▦</span>测试概览</a>
+      <a data-page="devices" href="#devices"><span>▣</span>设备选择</a>
+      <a data-page="strategy" href="#strategy"><span>◌</span>压力策略</a>
+      <a data-page="tasks" href="#tasks"><span>☷</span>任务记录</a>
+    </nav>
     <div class="side-safety"><span>⌁</span><div><b>安全保护已启用</b><small>已挂载设备禁止裸盘测试</small></div></div>
   </aside>
-  <main id="dashboard">
-    <header><div><p class="eyebrow">ENTERPRISE SSD · LINUX VALIDATION</p><h1>稳定性与耐久压力测试中心</h1><p class="muted">清晰地选择设备、验证策略，再开始一次可追溯的测试。</p></div><button class="primary" onclick="document.querySelector('#devices').scrollIntoView({behavior:'smooth'})">开始配置 <span>→</span></button></header>
-    <section class="environment" id="notice"></section>
-    <section class="panel diagnostics-panel"><div class="panel-head"><div><h2>运行环境自检</h2><p>检查 Linux、权限、fio 与诊断工具；真实裸盘测试前请确认所有必需项通过。</p></div><span id="archiveCount" class="step-counter">归档任务：--</span></div><div id="diagnosticsChecks" class="diagnostics-checks"></div></section>
-    <section class="metrics" id="metrics"></section>
-    <section class="setup" aria-label="新建压力测试">
-      <div class="section-heading"><div><p class="eyebrow">GUIDED SETUP</p><h2>新建压力测试</h2><p>按顺序完成配置；风险状态会在启动前再次核验。</p></div><span class="step-counter">3 个步骤</span></div>
-      <div class="setup-grid">
-        <article class="step-card" id="devices"><div class="step-number">01</div><div class="step-title device-title"><div><h3>选择企业级 SSD</h3><p>自动发现 Linux 物理磁盘</p></div><button id="rescanDevices" class="scan-button" type="button" onclick="scanDevices()" title="重新读取服务器物理磁盘与安全准入状态">↻ 重新扫描</button></div><p id="scanStatus" class="scan-status" aria-live="polite"></p><div class="device-list" id="deviceCards"></div></article>
-        <article class="step-card" id="strategy"><div class="step-number">02</div><div class="step-title"><h3>选择压力策略</h3><p>选择预设后可按实际场景调整参数</p></div><div class="plan-list" id="planCards"></div><div class="config-grid"><label>时长（小时）<input id="cfgDuration" type="number" min="1" max="720" oninput="renderSummary()"></label><label>块大小<select id="cfgBlockSize" onchange="renderSummary()"><option>4K</option><option>8K</option><option>16K</option><option>32K</option><option>64K</option><option>128K</option><option>256K</option><option>1M</option></select></label><label>读比例（%）<input id="cfgReadRatio" type="number" min="0" max="100" oninput="renderSummary()"></label><label>队列深度 QD<input id="cfgQueueDepth" type="number" min="1" max="1024" oninput="renderSummary()"></label><label>温度阈值（°C）<input id="cfgTemp" type="number" min="35" max="90" oninput="renderSummary()"></label><label>I/O 模式<select id="cfgPattern" onchange="renderSummary()"><option value="randrw">随机混合读写</option><option value="randread">随机读取</option><option value="randwrite">随机写入</option><option value="read">顺序读取</option><option value="write">顺序写入</option></select></label><label>并发作业数<input id="cfgJobs" type="number" min="1" max="32" oninput="renderSummary()"></label><label>预热时间（秒）<input id="cfgRamp" type="number" min="0" max="3600" oninput="renderSummary()"></label><label>带宽上限（MB/s，0不限）<input id="cfgRate" type="number" min="0" max="20000" oninput="renderSummary()"></label><label>数据校验<select id="cfgVerify" onchange="renderSummary()"><option value="none">不校验</option><option value="crc32c">CRC32C</option></select></label><label style="grid-column:1/-1">告警策略（可多选）<select id="cfgAlertPolicies" multiple size="3" onchange="renderSummary()"></select><small>仅应用所选且已启用的规则；不选择时仍保留系统内置的温度、P99 与吞吐保护规则。</small></label><label style="grid-column:1/-1">自定义 fio 参数（每行 参数=值）<textarea id="cfgExtra" rows="3" placeholder="thinktime=1000&#10;iodepth_batch_submit=16&#10;random_generator=lfsr" oninput="renderSummary()"></textarea><small>支持 thinktime、thinktime_blocks、iodepth_batch_submit、iodepth_batch_complete_min、iodepth_batch_complete_max、norandommap、refill_buffers、random_generator。</small></label></div></article>
-        <article class="step-card start-card"><div class="step-number">03</div><div class="step-title"><h3>确认并启动</h3><p>默认使用安全演示模式</p></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><label id="deviceConfirmBox" class="device-confirm" hidden><input id="confirmDevice" type="checkbox"><span>我确认当前选中的 SSD 是专用测试盘，允许覆盖其数据。</span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></article>
+
+  <main>
+    <section class="app-page" data-page="dashboard" id="dashboard">
+      <header>
+        <div><p class="eyebrow">ENTERPRISE SSD · LINUX VALIDATION</p><h1>稳定性与耐久压力测试中心</h1><p class="muted">查看环境、任务状态和实时遥测；配置测试请进入设备选择页面。</p></div>
+        <button class="primary" onclick="navigateTo('devices')">开始配置 <span>→</span></button>
+      </header>
+      <section class="environment" id="notice"></section>
+      <section class="panel diagnostics-panel"><div class="panel-head"><div><h2>运行环境自检</h2><p>检查 Linux、权限、fio 与诊断工具；真实裸盘测试前请确认所有必需项通过。</p></div><span id="archiveCount" class="step-counter">归档任务：--</span></div><div id="diagnosticsChecks" class="diagnostics-checks"></div></section>
+      <section class="metrics" id="metrics"></section>
+      <section class="monitor-grid">
+        <article class="panel telemetry"><div class="panel-head"><div><h2>实时遥测</h2><p id="telemetryName">等待任务启动</p></div><span class="live-dot">● LIVE</span></div><div class="chart-key"><span><i class="orange"></i>温度</span><span><i class="blue"></i>P99 延迟</span></div><div id="chart" class="chart"></div></article>
+        <article class="panel events-panel"><div class="panel-head"><div><h2>异常与事件</h2><p>优先显示需要关注的信息</p></div></div><div id="events" class="events"></div></article>
+      </section>
+    </section>
+
+    <section class="app-page" data-page="devices" id="devices" hidden>
+      <header class="page-header"><div><p class="eyebrow">STEP 01 · DEVICE ADMISSION</p><h1>选择企业级 SSD</h1><p class="muted">重新扫描后会再次校验分区、挂载、系统盘和只读状态。</p></div><button id="rescanDevices" class="primary" type="button" onclick="scanDevices()">↻ 重新扫描</button></header>
+      <section class="panel device-page-panel"><div class="panel-head"><div><h2>Linux 物理磁盘</h2><p id="scanStatus">仅可选择通过裸盘测试准入检查的 SSD。</p></div><span class="step-counter">先选择测试设备</span></div><div class="device-list device-page-list" id="deviceCards"></div></section>
+      <section class="panel logs-panel"><div class="panel-head"><div><h2>NVMe 盘片日志与扩展 SMART</h2><p>采集当前选中 SSD 的全量/关键 telemetry，以及 0xC0、0xCA 扩展日志。</p></div><button class="primary" onclick="collectLogs()">采集当前 SSD 日志</button></div><div id="logResult" class="muted" style="margin-top:12px">日志将保存到服务器项目目录的 logs 文件夹。</div></section>
+      <div class="page-actions"><button class="primary" onclick="navigateTo('strategy')">下一步：配置压力策略 <span>→</span></button></div>
+    </section>
+
+    <section class="app-page" data-page="strategy" id="strategy" hidden>
+      <header class="page-header"><div><p class="eyebrow">STEP 02 · STRESS POLICY</p><h1>配置压力策略</h1><p class="muted">选择预设策略后，可在受控范围内调整 fio 参数并启动任务。</p></div><button class="text-button page-back" onclick="navigateTo('devices')">← 返回设备选择</button></header>
+      <div class="strategy-layout">
+        <section class="panel"><div class="panel-head"><div><h2>预设压力策略</h2><p>选择一个策略作为本次测试的参数基线。</p></div></div><div class="plan-list" id="planCards"></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>压力参数</h2><p>系统会在创建任务时再次检查取值范围。</p></div></div><div class="config-grid"><label>时长（小时）<input id="cfgDuration" type="number" min="1" max="720" oninput="renderSummary()"></label><label>块大小<select id="cfgBlockSize" onchange="renderSummary()"><option>4K</option><option>8K</option><option>16K</option><option>32K</option><option>64K</option><option>128K</option><option>256K</option><option>1M</option></select></label><label>读比例（%）<input id="cfgReadRatio" type="number" min="0" max="100" oninput="renderSummary()"></label><label>队列深度 QD<input id="cfgQueueDepth" type="number" min="1" max="1024" oninput="renderSummary()"></label><label>温度阈值（°C）<input id="cfgTemp" type="number" min="35" max="90" oninput="renderSummary()"></label><label>I/O 模式<select id="cfgPattern" onchange="renderSummary()"><option value="randrw">随机混合读写</option><option value="randread">随机读取</option><option value="randwrite">随机写入</option><option value="read">顺序读取</option><option value="write">顺序写入</option></select></label><label>并发作业数<input id="cfgJobs" type="number" min="1" max="32" oninput="renderSummary()"></label><label>预热时间（秒）<input id="cfgRamp" type="number" min="0" max="3600" oninput="renderSummary()"></label><label>带宽上限（MB/s，0 不限）<input id="cfgRate" type="number" min="0" max="20000" oninput="renderSummary()"></label><label>数据校验<select id="cfgVerify" onchange="renderSummary()"><option value="none">不校验</option><option value="crc32c">CRC32C</option></select></label><label style="grid-column:1/-1">告警策略（可多选）<select id="cfgAlertPolicies" multiple size="3" onchange="renderSummary()"></select><small>仅应用所选且已启用的规则；不选择时仍保留系统内置的温度、P99 与吞吐保护规则。</small></label><label style="grid-column:1/-1">自定义 fio 参数（每行 参数=值）<textarea id="cfgExtra" rows="3" placeholder="thinktime=1000&#10;iodepth_batch_submit=16&#10;random_generator=lfsr" oninput="renderSummary()"></textarea><small>支持 thinktime、thinktime_blocks、iodepth_batch_submit、iodepth_batch_complete_min、iodepth_batch_complete_max、norandommap、refill_buffers、random_generator。</small></label></div></section>
+        <section class="panel start-card"><div class="panel-head"><div><h2>确认并启动</h2><p>默认使用安全演示模式。</p></div></div><div id="selectionSummary" class="selection-summary"></div><label class="switch-row"><input id="realMode" type="checkbox" onchange="toggleMode()"><span class="switch"></span><span><b>真实 fio 裸盘压测</b><small>将永久覆盖选定 SSD 数据</small></span></label><label id="deviceConfirmBox" class="device-confirm" hidden><input id="confirmDevice" type="checkbox"><span>我确认当前选中的 SSD 是专用测试盘，允许覆盖其数据。</span></label><button class="primary wide" id="launch" onclick="createTask(event)">启动安全演示 <span>→</span></button></section>
       </div>
     </section>
-    <section class="panel" style="margin-top:18px"><div class="panel-head"><div><h2>NVMe 盘片日志与扩展 SMART</h2><p>采集选中 SSD 的全量/关键 telemetry，以及 0xC0、0xCA 扩展日志。</p></div><button class="primary" onclick="collectLogs()">采集当前 SSD 日志</button></div><div id="logResult" class="muted" style="margin-top:12px">日志将保存到服务器项目目录的 logs 文件夹。</div></section>
-    <section class="monitor-grid">
-      <article class="panel telemetry"><div class="panel-head"><div><h2>实时遥测</h2><p id="telemetryName">等待任务启动</p></div><span class="live-dot">● LIVE</span></div><div class="chart-key"><span><i class="orange"></i>温度</span><span><i class="blue"></i>P99 延迟</span></div><div id="chart" class="chart"></div></article>
-      <article class="panel events-panel"><div class="panel-head"><div><h2>异常与事件</h2><p>优先显示需要关注的信息</p></div></div><div id="events" class="events"></div></article>
+
+    <section class="app-page" data-page="tasks" id="tasks" hidden>
+      <header class="page-header"><div><p class="eyebrow">TASKS · HISTORY · GOVERNANCE</p><h1>任务记录与运维治理</h1><p class="muted">查看执行队列、历史报告、告警、批次和操作审计。</p></div><button class="text-button" onclick="refresh()">↻ 刷新数据</button></header>
+      <section class="panel task-panel"><div class="panel-head"><div><h2>测试任务</h2><p>按设备、状态快速定位任务；可导出当前全部任务摘要。</p></div><div class="task-tools"><input id="taskKeyword" type="search" placeholder="搜索设备、序列号或策略" oninput="renderDashboard()"><select id="taskStatusFilter" onchange="renderDashboard()"><option value="全部">全部状态</option><option value="运行中">运行中</option><option value="排队中">排队中</option><option value="已完成">已完成</option><option value="已停止">已停止</option><option value="失败">失败</option></select><a class="text-button" href="/api/tasks/export.csv">↓ 导出 CSV</a></div></div><div class="table-wrap"><table><thead><tr><th>设备与策略</th><th>模式</th><th>开始时间（北京时间）</th><th>进度</th><th>状态</th><th>结论</th><th>操作</th></tr></thead><tbody id="tasksBody"></tbody></table></div></section>
+      <section class="panel operations-panel"><div class="panel-head"><div><h2>运维与治理中心</h2><p>集中查看设备风险、队列、告警、批次、审计和数据库维护状态。</p></div><button class="text-button" onclick="loadOperations()">↻ 更新治理数据</button></div><div id="operationsSummary" class="operations-grid"></div><div class="operations-columns"><div><h3>待确认告警</h3><div id="alertsList" class="operations-list"></div></div><div><h3>测试批次</h3><div id="batchesList" class="operations-list"></div></div><div><h3>最近审计</h3><div id="auditList" class="operations-list"></div></div></div></section>
     </section>
-    <section class="panel task-panel" id="tasks"><div class="panel-head"><div><h2>测试任务</h2><p>按设备、状态快速定位任务；可导出当前全部任务摘要。</p></div><div class="task-tools"><input id="taskKeyword" type="search" placeholder="搜索设备、序列号或策略" oninput="renderDashboard()"><select id="taskStatusFilter" onchange="renderDashboard()"><option value="全部">全部状态</option><option value="运行中">运行中</option><option value="排队中">排队中</option><option value="已完成">已完成</option><option value="已停止">已停止</option><option value="失败">失败</option></select><a class="text-button" href="/api/tasks/export.csv">↓ 导出 CSV</a><button class="text-button" onclick="refresh()">↻ 刷新</button></div></div><div class="table-wrap"><table><thead><tr><th>设备与策略</th><th>模式</th><th>开始时间（北京时间）</th><th>进度</th><th>状态</th><th>结论</th><th>操作</th></tr></thead><tbody id="tasksBody"></tbody></table></div></section>
-    <section class="panel operations-panel"><div class="panel-head"><div><h2>运维与治理中心</h2><p>集中查看设备风险、队列、告警、批次、审计和数据库维护状态。</p></div><button class="text-button" onclick="loadOperations()">↻ 更新治理数据</button></div><div id="operationsSummary" class="operations-grid"></div><div class="operations-columns"><div><h3>待确认告警</h3><div id="alertsList" class="operations-list"></div></div><div><h3>测试批次</h3><div id="batchesList" class="operations-list"></div></div><div><h3>最近审计</h3><div id="auditList" class="operations-list"></div></div></div></section>
-  </main><script src="app.js"></script>
-</body></html>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
