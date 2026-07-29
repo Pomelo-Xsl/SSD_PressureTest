@@ -11,6 +11,7 @@ class FrontendStructureTests(unittest.TestCase):
         self.html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
         self.script = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
         self.server = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.styles = (ROOT / 'static' / 'styles.css').read_text(encoding='utf-8')
 
     def test_navigation_targets_are_separate_work_pages(self):
         for page in ('dashboard', 'monitoring', 'devices', 'strategy', 'tasks', 'operations'):
@@ -51,6 +52,9 @@ class FrontendStructureTests(unittest.TestCase):
     def test_runtime_assets_disable_stale_browser_cache(self):
         self.assertIn("Cache-Control', 'no-store, max-age=0, must-revalidate", self.server)
         self.assertIn("'/app.js'", self.server)
+
+    def test_task_report_action_does_not_wrap_vertically(self):
+        self.assertIn('.task-panel td:last-child{min-width:84px;white-space:nowrap}', self.styles)
 
 
 if __name__ == '__main__':
