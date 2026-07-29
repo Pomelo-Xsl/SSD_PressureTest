@@ -29,6 +29,14 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn('function navigateTo(page)', self.script)
         self.assertIn("window.addEventListener('hashchange'", self.script)
 
+    def test_alert_acknowledgement_uses_local_update_before_background_sync(self):
+        start = self.script.index('async function acknowledgeAlert')
+        end = self.script.index('async function loadOperations', start)
+        acknowledgement = self.script[start:end]
+        self.assertIn('renderOperationsFromState()', acknowledgement)
+        self.assertIn("api('/api/alerts').then", acknowledgement)
+        self.assertNotIn('refresh()', acknowledgement)
+
 
 if __name__ == '__main__':
     unittest.main()
