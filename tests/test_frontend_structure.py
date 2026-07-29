@@ -53,8 +53,10 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn("Cache-Control', 'no-store, max-age=0, must-revalidate", self.server)
         self.assertIn("'/app.js'", self.server)
 
-    def test_task_report_action_does_not_wrap_vertically(self):
-        self.assertIn('.task-panel td:last-child{min-width:84px;white-space:nowrap}', self.styles)
+    def test_task_table_fills_page_without_horizontal_scroll(self):
+        self.assertIn('.task-panel .table-wrap{overflow:visible}', self.styles)
+        self.assertIn('.task-panel table{min-width:0;table-layout:fixed}', self.styles)
+        self.assertIn("td:nth-child(7){width:7%;white-space:nowrap}", self.styles)
 
 
 if __name__ == '__main__':
