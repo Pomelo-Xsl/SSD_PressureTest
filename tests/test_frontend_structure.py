@@ -56,7 +56,12 @@ class FrontendStructureTests(unittest.TestCase):
     def test_task_table_fills_page_without_horizontal_scroll(self):
         self.assertIn('.task-panel .table-wrap{overflow:visible}', self.styles)
         self.assertIn('.task-panel table{min-width:0;table-layout:fixed}', self.styles)
-        self.assertIn("td:nth-child(7){width:7%;white-space:nowrap}", self.styles)
+        self.assertIn("td:nth-child(6){width:12%}", self.styles)
+        self.assertIn("td:nth-child(7){width:6%;white-space:nowrap}", self.styles)
+        self.assertIn('.task-panel .progress{width:78px', self.styles)
+
+    def test_task_delete_has_no_visible_hint(self):
+        self.assertNotIn('右键删除此历史任务', self.script)
 
 
 if __name__ == '__main__':
