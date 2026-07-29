@@ -568,6 +568,13 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / 'static'), **kwargs)
 
+    def end_headers(self):
+        request_path = urlparse(self.path).path
+        if request_path.startswith('/api/') or request_path in ('/', '/index.html', '/app.js', '/styles.css', '/rescan.css'):
+            self.send_header('Cache-Control', 'no-store, max-age=0, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+        super().end_headers()
+
     def log_message(self, *args):
         pass
 

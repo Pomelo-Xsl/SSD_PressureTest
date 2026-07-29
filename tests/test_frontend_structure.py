@@ -10,6 +10,7 @@ class FrontendStructureTests(unittest.TestCase):
     def setUp(self):
         self.html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
         self.script = (ROOT / 'static' / 'app.js').read_text(encoding='utf-8')
+        self.server = (ROOT / 'app.py').read_text(encoding='utf-8')
 
     def test_navigation_targets_are_separate_work_pages(self):
         for page in ('dashboard', 'monitoring', 'devices', 'strategy', 'tasks', 'operations'):
@@ -46,6 +47,10 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertNotIn('function beginTaskSwipe', self.script)
         self.assertNotIn('function endTaskSwipe', self.script)
         self.assertIn("/api/tasks/${id}/delete", self.script)
+
+    def test_runtime_assets_disable_stale_browser_cache(self):
+        self.assertIn("Cache-Control', 'no-store, max-age=0, must-revalidate", self.server)
+        self.assertIn("'/app.js'", self.server)
 
 
 if __name__ == '__main__':
