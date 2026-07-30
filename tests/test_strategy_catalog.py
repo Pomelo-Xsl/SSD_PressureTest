@@ -1,6 +1,6 @@
 import unittest
 
-from strategy_catalog import enabled_strategies, normalize_strategy, strategy_snapshot
+from test_workflow import enabled_strategies, normalize_strategy, strategy_snapshot
 
 
 class StrategyCatalogTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from alert_rules import active_maintenance_windows, build_alert_fingerprint, create_policy_version, evaluate_alert_policy, mark_notification_result, normalize_alert_policy, policy_summary, prepare_notification_outbox
+from alerts import active_maintenance_windows, build_alert_fingerprint, create_policy_version, evaluate_alert_policy, mark_notification_result, normalize_alert_policy, policy_summary, prepare_notification_outbox
 
 
 def sample_policy():

@@ -28,7 +28,7 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn('id="tasksBody"', self.html)
 
     def test_hash_router_exposes_explicit_navigation(self):
-        self.assertIn('function applyRoute()', self.script)
+        self.assertIn('function applyRoute(', self.script)
         self.assertIn('function navigateTo(page)', self.script)
         self.assertIn("window.addEventListener('hashchange'", self.script)
 
@@ -41,7 +41,8 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertNotIn('refresh()', acknowledgement)
 
     def test_terminal_tasks_offer_a_delete_action(self):
-        self.assertIn("['已完成','已停止','失败','已中断'].includes(t.status)", self.script)
+        self.assertIn("TERMINAL_TASK_STATUSES=new Set(['已完成','已停止','失败','已中断'])", self.script)
+        self.assertIn('TERMINAL_TASK_STATUSES.has(t.status)', self.script)
         self.assertIn('function openTaskDelete', self.script)
         self.assertIn('oncontextmenu="openTaskDelete', self.script)
         self.assertNotIn('onclick="deleteTask', self.script)
@@ -67,6 +68,11 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn("METRIC_PAGE_MAP=['devices','tasks','tasks','devices']", self.script)
         self.assertIn("makeDashboardMetricsNavigable", self.script)
         self.assertIn("navigateTo(card.dataset.navigateTo)", self.script)
+
+    def test_page_config_owns_titles_and_visible_page_rendering(self):
+        self.assertIn('const PAGE_CONFIG=', self.script)
+        self.assertIn('PAGE_CONFIG[page].draw()', self.script)
+        self.assertIn('document.title=`SSD PressureTest · ${PAGE_CONFIG[page].title}`', self.script)
 
 
 if __name__ == '__main__':

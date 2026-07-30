@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from database_maintenance import backup_database, database_health, list_backups, prune_backups
+from runtime_ops import backup_database, database_health, list_backups, prune_backups
 
 
 class DatabaseMaintenanceTests(unittest.TestCase):

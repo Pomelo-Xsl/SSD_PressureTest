@@ -18,22 +18,15 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo
 from analysis_engine import analyze_task
-from alert_center import acknowledge_alert, alert_summary, build_alerts
-from alert_rules import build_alert_fingerprint, create_policy_version, evaluate_alert_policy, normalize_alert_policy, policy_summary
-from device_assets import enrich_device, summarize_inventory
-from database_maintenance import backup_database, database_health, list_backups, prune_backups
+from alerts import acknowledge_alert, alert_summary, build_alerts, build_alert_fingerprint, create_policy_version, evaluate_alert_policy, normalize_alert_policy, policy_summary
 from device_history import summarize_device_history
 from evidence_bundle import build_evidence_bundle
-from fio_executor import build_fio_command, parse_fio_json, stage_progress, summarize_stage_result
+from runtime_ops import backup_database, build_fio_command, collect_environment_health, database_health, enrich_device, list_backups, parse_fio_json, prune_backups, stage_progress, summarize_inventory, summarize_stage_result
 from operations_store import OperationsStore
-from policy_engine import active_stage, build_test_stages, estimate_test_envelope
 from report_builder import build_report
 from report_enrichment import build_report_evidence
 from results_center import build_filter_facets, build_history_trend, compare_results, query_results
-from system_diagnostics import collect_environment_health
-from strategy_catalog import enabled_strategies, normalize_strategy, strategy_snapshot
-from task_scheduler import next_runnable_task, normalize_priority, queue_position, summarize_queue
-from telemetry_rules import evaluate_sample, telemetry_summary
+from test_workflow import active_stage, build_test_stages, enabled_strategies, estimate_test_envelope, evaluate_sample, next_runnable_task, normalize_priority, normalize_strategy, queue_position, strategy_snapshot, summarize_queue, telemetry_summary
 from time_series_store import InMemoryTimeSeriesStore
 ROOT, DATA_FILE = (Path(__file__).parent, Path(__file__).parent / 'data.json')
 LOG_ROOT = ROOT / 'logs'
@@ -67,6 +60,16 @@ MAX_TASK_EVENTS = 50
 MAX_TELEMETRY_SAMPLES = 200
 COMMAND_TIMEOUT_SECONDS = 12
 NVME_LOG_TIMEOUT_SECONDS = 180
+CONFIG_LIMITS = {
+    'read_ratio': (MIN_READ_RATIO, MAX_READ_RATIO, '读比例必须在 0% 到 100% 之间'),
+    'queue_depth': (MIN_QUEUE_DEPTH, MAX_QUEUE_DEPTH, '队列深度必须在 1 到 1024 之间'),
+    'threshold_temp': (MIN_TEMPERATURE_C, MAX_TEMPERATURE_C, '温度阈值必须在 35°C 到 90°C 之间'),
+}
+EXECUTION_LIMITS = {
+    'num_jobs': (MIN_JOBS, MAX_JOBS, '并发作业数必须在 1 到 32 之间'),
+    'ramp_time': (0, MAX_RAMP_SECONDS, '预热时间必须在 0 到 3600 秒之间'),
+    'rate_limit': (0, MAX_RATE_MBPS, '限速必须在 0 到 20000 MB/s 之间'),
+}
 TIME_SERIES = InMemoryTimeSeriesStore(max_samples_per_series=MAX_TELEMETRY_SAMPLES)
 
 def beijing_time_string():
@@ -80,9 +83,6 @@ def running_on_linux():
 
 def destructive_stress_allowed():
     return os.getenv('ENABLE_DESTRUCTIVE_FIO') == '1'
-
-def initialize_results_database():
-    STORE.initialize()
 
 def archive_finished_task(task, history):
     if task.get('status') not in ('已完成', '已停止', '已中断', '失败'):
@@ -104,12 +104,12 @@ def build_task_report_evidence(task, analysis):
         pass
     return build_report_evidence(task, analysis, asset_history, alerts)
 
-initialize_results_database()
+STORE.initialize()
 
 def resolve_test_config(plan, overrides):
     overrides = overrides or {}
     try:
-        # 自定义参数必须在服务端按白名单过滤，不能信任 Web 输入。
+        # fio 会直接把未知参数带进真实裸盘任务，服务端只接受经过验证的白名单。
         raw_options = overrides.get('extra_options', '')
         if raw_options and not isinstance(raw_options, str):
             raise ValueError('自定义参数必须为文本')
@@ -140,20 +140,14 @@ def resolve_test_config(plan, overrides):
         raise ValueError('测试时长必须在 1 到 720 小时之间')
     if config['block_size'] not in BLOCK_SIZES:
         raise ValueError('不支持的块大小')
-    if not MIN_READ_RATIO <= config['read_ratio'] <= MAX_READ_RATIO:
-        raise ValueError('读比例必须在 0% 到 100% 之间')
-    if not MIN_QUEUE_DEPTH <= config['queue_depth'] <= MAX_QUEUE_DEPTH:
-        raise ValueError('队列深度必须在 1 到 1024 之间')
-    if not MIN_TEMPERATURE_C <= config['threshold_temp'] <= MAX_TEMPERATURE_C:
-        raise ValueError('温度阈值必须在 35°C 到 90°C 之间')
+    for field, (minimum, maximum, message) in CONFIG_LIMITS.items():
+        if not minimum <= config[field] <= maximum:
+            raise ValueError(message)
     if config['io_pattern'] not in IO_PATTERNS:
         raise ValueError('不支持的 I/O 模式')
-    if not MIN_JOBS <= config['num_jobs'] <= MAX_JOBS:
-        raise ValueError('并发作业数必须在 1 到 32 之间')
-    if not 0 <= config['ramp_time'] <= MAX_RAMP_SECONDS:
-        raise ValueError('预热时间必须在 0 到 3600 秒之间')
-    if not 0 <= config['rate_limit'] <= MAX_RATE_MBPS:
-        raise ValueError('限速必须在 0 到 20000 MB/s 之间')
+    for field, (minimum, maximum, message) in EXECUTION_LIMITS.items():
+        if not minimum <= config[field] <= maximum:
+            raise ValueError(message)
     if config['verify'] not in VERIFY_MODES:
         raise ValueError('不支持的数据校验模式')
     return config
@@ -221,7 +215,7 @@ def flatten_mount_tree(items):
         yield item
         yield from flatten_mount_tree(item.get('children', []))
 
-def celsius(value):
+def normalize_temperature_celsius(value):
     if value in (None, '', '--'):
         return '--'
     match = re.search('-?\\d+(?:\\.\\d+)?', str(value))
@@ -238,7 +232,7 @@ def read_smart_log(path, transport):
     if result and result.returncode == 0:
         try:
             data = json.loads(result.stdout)
-            info['temperature'] = celsius(data.get('temperature', '--'))
+            info['temperature'] = normalize_temperature_celsius(data.get('temperature', '--'))
             info['health'] = data.get('percentage_used', 0)
             info['health'] = max(0, 100 - int(info['health']))
             return info
@@ -248,7 +242,7 @@ def read_smart_log(path, transport):
     if result and result.stdout:
         try:
             data = json.loads(result.stdout)
-            info['temperature'] = celsius(data.get('temperature', {}).get('current', '--'))
+            info['temperature'] = normalize_temperature_celsius(data.get('temperature', {}).get('current', '--'))
             info['health'] = 100 if data.get('smart_status', {}).get('passed') else '--'
         except (ValueError, TypeError):
             pass

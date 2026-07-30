@@ -1,6 +1,6 @@
 import unittest
 
-from policy_engine import active_stage, build_test_stages, estimate_test_envelope
+from test_workflow import active_stage, build_test_stages, estimate_test_envelope
 
 
 class PolicyEngineTests(unittest.TestCase):

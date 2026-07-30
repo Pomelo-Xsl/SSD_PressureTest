@@ -1,6 +1,6 @@
 import unittest
 
-from alert_center import acknowledge_alert, alert_summary, build_alerts
+from alerts import acknowledge_alert, alert_summary, build_alerts
 
 
 class AlertCenterTests(unittest.TestCase):

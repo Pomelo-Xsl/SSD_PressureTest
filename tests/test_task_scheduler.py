@@ -1,6 +1,6 @@
 import unittest
 
-from task_scheduler import next_runnable_task, queue_position, summarize_queue
+from test_workflow import next_runnable_task, queue_position, summarize_queue
 
 
 class TaskSchedulerTests(unittest.TestCase):

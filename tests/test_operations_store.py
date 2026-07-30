@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from operations_store import OperationsStore
-from telemetry_rules import evaluate_sample, telemetry_summary
+from test_workflow import evaluate_sample, telemetry_summary
 
 
 class OperationsStoreTests(unittest.TestCase):

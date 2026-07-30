@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from fio_executor import build_fio_command, parse_fio_json, stage_progress
+from runtime_ops import build_fio_command, parse_fio_json, stage_progress
 
 
 class FioExecutorTests(unittest.TestCase):

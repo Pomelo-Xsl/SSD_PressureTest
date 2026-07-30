@@ -1,6 +1,6 @@
 import unittest
 
-from device_assets import enrich_device, summarize_inventory
+from runtime_ops import enrich_device, summarize_inventory
 
 
 class DeviceAssetTests(unittest.TestCase):
