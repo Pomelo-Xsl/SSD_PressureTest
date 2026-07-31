@@ -1,3 +1,6 @@
+from common import display_text as _text, number_value
+
+
 REPORTABLE_ALERT_SEVERITIES = ('警告', '严重')
 ACTIVE_TASK_STATUSES = ('运行中', '停止中', '排队中')
 TERMINAL_TASK_STATUSES = ('已完成', '已停止', '已中断', '失败')
@@ -7,22 +10,6 @@ NUMERIC_SAMPLE_FIELDS = (
     ('throughput', '吞吐'),
     ('health', '介质健康度'),
 )
-
-
-def _text(value, fallback='--'):
-    if value in (None, '', '--'):
-        return fallback
-    return str(value)
-
-
-def _number(value):
-    if isinstance(value, bool) or value in (None, '', '--'):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
 
 def _round(value, digits=2):
     return round(value, digits) if value is not None else None
@@ -38,7 +25,7 @@ def _sample_value_state(sample, field):
     value = sample.get(field)
     if value in (None, '', '--'):
         return 'missing'
-    if _number(value) is None:
+    if number_value(value) is None:
         return 'invalid'
     return 'valid'
 
@@ -280,8 +267,8 @@ def _history_snapshot(snapshot):
         'path': _text(_snapshot_field(snapshot, 'path')),
         'firmware': _text(_snapshot_field(snapshot, 'firmware') or _snapshot_field(snapshot, 'firmware_version') or _snapshot_field(snapshot, 'fwrev') or _snapshot_field(snapshot, 'revision')),
         'interface': _text(_snapshot_field(snapshot, 'interface') or _snapshot_field(snapshot, 'transport')),
-        'health': _number(_snapshot_field(snapshot, 'health')),
-        'temperature': _number(_snapshot_field(snapshot, 'temperature')),
+        'health': number_value(_snapshot_field(snapshot, 'health')),
+        'temperature': number_value(_snapshot_field(snapshot, 'temperature')),
         'capacity': _text(_snapshot_field(snapshot, 'capacity')),
     }
 
@@ -296,7 +283,7 @@ def _trend(start, end):
     return '稳定'
 
 
-def summarize_asset_history(task, asset_history=None):
+def asset_history_evidence(task, asset_history=None):
     source, source_summary = _history_source(asset_history, task)
     snapshots = [_history_snapshot(item) for item in source if isinstance(item, dict)]
     snapshots.sort(key=lambda item: (item['captured_at'] == '--', item['captured_at']))
@@ -394,7 +381,7 @@ def _derived_alerts(task):
     return alerts
 
 
-def summarize_alert_lifecycle(task, alerts=None):
+def alert_lifecycle_evidence(task, alerts=None):
     task_id = task.get('id')
     source = '任务事件推断'
     if alerts is None:
@@ -461,11 +448,11 @@ def summarize_alert_lifecycle(task, alerts=None):
     }
 
 
-def build_report_evidence(task, analysis, asset_history=None, alerts=None):
+def report_evidence(task, analysis, asset_history=None, alerts=None):
     stage_overview = stage_result_overview(task)
     data_quality = assess_telemetry_data_quality(task, analysis)
-    asset_summary = summarize_asset_history(task, asset_history)
-    alert_lifecycle = summarize_alert_lifecycle(task, alerts)
+    asset_summary = asset_history_evidence(task, asset_history)
+    alert_lifecycle = alert_lifecycle_evidence(task, alerts)
     analysis = analysis if isinstance(analysis, dict) else {}
     recommendations = []
     if data_quality['level'] != '充分':
@@ -501,3 +488,9 @@ def build_report_evidence(task, analysis, asset_history=None, alerts=None):
         'report_ready': report_ready,
         'recommendations': recommendations,
     }
+
+
+def render_analysis_report(task, analysis, generated_at, enrichment=None):
+    # 报告模板很长，留在内部文件，外部调用不再同时依赖证据模块和模板模块。
+    from _report_html import render_report_page
+    return render_report_page(task, analysis, generated_at, enrichment)

@@ -1,7 +1,6 @@
 import unittest
 from analysis_engine import analyze_task
-from report_builder import build_report
-from report_enrichment import build_report_evidence
+from report_enrichment import render_analysis_report, report_evidence
 
 def task_template(**changes):
     task = {'id': 'task-001', 'device': 'Enterprise NVMe <test>', 'serial': 'SN-001', 'path': '/dev/nvme1n1', 'plan': '24 小时稳定性验证', 'duration': 24, 'block_size': '4K', 'queue_depth': 64, 'threshold_temp': 70, 'mode': '真实 fio 裸盘', 'status': '已完成', 'progress': 100, 'started_at': '2026-07-28 12:00:00', 'samples': [{'temperature': 42, 'p99': 4.0, 'throughput': 2500, 'health': 98}, {'temperature': 43, 'p99': 4.5, 'throughput': 2480, 'health': 98}, {'temperature': 44, 'p99': 4.2, 'throughput': 2460, 'health': 98}, {'temperature': 45, 'p99': 4.8, 'throughput': 2450, 'health': 98}], 'events': [{'time': '2026-07-28 12:00:00', 'severity': '信息', 'text': '测试完成'}]}
@@ -50,7 +49,7 @@ class AnalysisEngineTests(unittest.TestCase):
     def test_report_escapes_device_content(self):
         task = task_template()
         analysis = analyze_task(task)
-        html = build_report(task, analysis, '2026-07-28 12:30:00').decode('utf-8')
+        html = render_analysis_report(task, analysis, '2026-07-28 12:30:00').decode('utf-8')
         self.assertIn('Enterprise NVMe &lt;test&gt;', html)
         self.assertIn('稳定性综合评分', html)
         self.assertIn('算法判定依据', html)
@@ -62,8 +61,8 @@ class AnalysisEngineTests(unittest.TestCase):
             {'time': '2026-07-28 12:01:00', 'stage_name': '负载', 'temperature': 43, 'p99': 4.5, 'throughput': 2480, 'health': 98},
         ])
         analysis = analyze_task(task)
-        evidence = build_report_evidence(task, analysis)
-        html = build_report(task, analysis, '2026-07-28 12:30:00', evidence).decode('utf-8')
+        evidence = report_evidence(task, analysis)
+        html = render_analysis_report(task, analysis, '2026-07-28 12:30:00', evidence).decode('utf-8')
         self.assertIn('报告证据完整度', html)
         self.assertIn('遥测数据质量', html)
         self.assertIn('告警处置闭环', html)

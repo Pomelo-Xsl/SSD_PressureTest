@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from operations_store import OperationsStore
-from test_workflow import evaluate_sample, telemetry_summary
+from test_workflow import check_sample_limits, telemetry_rollup
 
 
 class OperationsStoreTests(unittest.TestCase):
@@ -83,11 +83,11 @@ class TelemetryRuleTests(unittest.TestCase):
 
     def test_temperature_and_latency_thresholds_create_events(self):
         task = {'threshold_temp': 70, 'samples': []}
-        events = evaluate_sample(task, {'temperature': 71, 'p99': 52, 'throughput': 2000})
+        events = check_sample_limits(task, {'temperature': 71, 'p99': 52, 'throughput': 2000})
         self.assertEqual([event[0] for event in events], ['严重', '严重'])
 
     def test_summary_ignores_missing_values(self):
-        summary = telemetry_summary([{'temperature': 42, 'p99': '--', 'throughput': 2000, 'health': 99}, {'temperature': 44, 'p99': 4.2, 'throughput': 2200, 'health': '--'}])
+        summary = telemetry_rollup([{'temperature': 42, 'p99': '--', 'throughput': 2000, 'health': 99}, {'temperature': 44, 'p99': 4.2, 'throughput': 2200, 'health': '--'}])
         self.assertEqual(summary['temperature']['avg'], 43.0)
         self.assertEqual(summary['p99']['count'], 1)
 

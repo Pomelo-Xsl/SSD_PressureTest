@@ -1,6 +1,6 @@
 import unittest
 
-from device_history import build_health_trend, compare_device_snapshots, normalize_device_snapshot, parse_capacity_bytes, summarize_device_history
+from device_history import health_timeline, compare_device_snapshots, device_snapshot_record, parse_capacity_bytes, device_history_overview
 
 
 class DeviceHistoryTests(unittest.TestCase):
@@ -11,7 +11,7 @@ class DeviceHistoryTests(unittest.TestCase):
         self.assertIsNone(parse_capacity_bytes('unknown'))
 
     def test_normalize_snapshot_reads_database_payload_and_aliases(self):
-        item = normalize_device_snapshot({'captured_at': '2026-07-29 09:00:00', 'payload': {'asset_id': 'asset-01', 'model': 'Enterprise SSD', 'serial': 'SN-001', 'path': '/dev/nvme1n1', 'transport': 'nvme', 'fwrev': '1.2.3', 'capacity': '3.84 TB', 'health': '98', 'temperature': '42 C'}})
+        item = device_snapshot_record({'captured_at': '2026-07-29 09:00:00', 'payload': {'asset_id': 'asset-01', 'model': 'Enterprise SSD', 'serial': 'SN-001', 'path': '/dev/nvme1n1', 'transport': 'nvme', 'fwrev': '1.2.3', 'capacity': '3.84 TB', 'health': '98', 'temperature': '42 C'}})
         self.assertEqual(item['asset_id'], 'asset-01')
         self.assertEqual(item['interface'], 'NVMe')
         self.assertEqual(item['firmware'], '1.2.3')
@@ -42,7 +42,7 @@ class DeviceHistoryTests(unittest.TestCase):
             {'asset_id': 'asset-01', 'captured_at': '2026-07-27 10:00:00', 'health': 100, 'temperature': 42},
             {'asset_id': 'asset-01', 'captured_at': '2026-07-28 10:00:00', 'health': 99.4, 'temperature': 48},
         ]
-        trend = build_health_trend(history)
+        trend = health_timeline(history)
         self.assertEqual(trend['points'][0]['captured_at'], '2026-07-27 10:00:00')
         self.assertEqual(trend['health']['trend'], '下降')
         self.assertEqual(trend['health']['difference'], -1.2)
@@ -53,7 +53,7 @@ class DeviceHistoryTests(unittest.TestCase):
             {'asset_id': 'asset-01', 'captured_at': '2026-07-27 10:00:00', 'firmware': '1.0', 'interface': 'NVMe', 'capacity': '3.84 TB', 'health': 100},
             {'asset_id': 'asset-01', 'captured_at': '2026-07-28 10:00:00', 'firmware': '1.1', 'interface': 'NVMe', 'capacity': '3.84 TB', 'health': 99.9},
         ]
-        summary = summarize_device_history(history)
+        summary = device_history_overview(history)
         self.assertTrue(summary['firmware_changed'])
         self.assertFalse(summary['interface_changed'])
         self.assertIsNotNone(summary['latest_change'])

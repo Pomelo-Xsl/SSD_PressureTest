@@ -1,12 +1,12 @@
 import unittest
 
-from time_series_store import InMemoryTimeSeriesStore, calculate_missing_intervals, data_quality_summary, downsample_time_series, flatten_metric_sample, merge_stage_labels, normalize_metric_sample
+from time_series_store import TelemetryCache, calculate_missing_intervals, metric_data_quality, downsample_time_series, flatten_metric_sample, merge_stage_labels, parse_metric_sample
 
 
 class TimeSeriesNormalizationTests(unittest.TestCase):
 
     def test_normalize_accepts_time_aliases_nested_metrics_and_labels(self):
-        record = normalize_metric_sample({
+        record = parse_metric_sample({
             'time': '2026-07-29 08:00:00+08:00',
             'temperature': '42.5 C',
             'metrics': {'p99': '7.2', 'throughput': '2,400 MB/s'},
@@ -20,7 +20,7 @@ class TimeSeriesNormalizationTests(unittest.TestCase):
 
     def test_normalize_requires_timestamp_and_flatten_keeps_metrics(self):
         with self.assertRaises(ValueError):
-            normalize_metric_sample({'temperature': 40})
+            parse_metric_sample({'temperature': 40})
         flattened = flatten_metric_sample({'timestamp': 0, 'temperature': 40, 'stage': '负载'})
         self.assertEqual(flattened['timestamp'], '1970-01-01T00:00:00Z')
         self.assertEqual(flattened['temperature'], 40.0)
@@ -30,7 +30,7 @@ class TimeSeriesNormalizationTests(unittest.TestCase):
 class TimeSeriesStoreTests(unittest.TestCase):
 
     def test_store_orders_merges_and_projects_samples(self):
-        store = InMemoryTimeSeriesStore()
+        store = TelemetryCache()
         store.write_samples('task-a', [
             {'time': '2026-07-29T00:02:00Z', 'temperature': 44, 'stage': '负载'},
             {'time': '2026-07-29T00:01:00Z', 'temperature': 42, 'stage': '预热'},
@@ -44,7 +44,7 @@ class TimeSeriesStoreTests(unittest.TestCase):
         self.assertEqual(store.series_summary('task-a')['stages'], ['负载', '预热'])
 
     def test_store_filters_bounds_stages_and_retention(self):
-        store = InMemoryTimeSeriesStore(max_samples_per_series=3)
+        store = TelemetryCache(max_samples_per_series=3)
         samples = []
         for minute in range(4):
             samples.append({'time': '2026-07-29T00:0{0}:00Z'.format(minute), 'temperature': 40 + minute, 'stage': '预热' if minute < 2 else '负载'})
@@ -88,7 +88,7 @@ class TimeSeriesProcessingTests(unittest.TestCase):
         gaps = calculate_missing_intervals(samples, 60, ignore_invalid=True)
         self.assertEqual(gaps['missing_sample_count'], 2)
         self.assertEqual(gaps['gap_count'], 1)
-        quality = data_quality_summary(samples, 60)
+        quality = metric_data_quality(samples, 60)
         self.assertEqual(quality['invalid_sample_count'], 1)
         self.assertEqual(quality['completeness_pct'], 60.0)
         self.assertEqual(quality['quality'], '需关注')

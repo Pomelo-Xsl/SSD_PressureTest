@@ -81,7 +81,7 @@ def _first_value(source, fields):
     return None
 
 
-def _metric_number(value):
+def telemetry_scalar(value):
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -129,7 +129,7 @@ def _stage_label(value):
     return text or None
 
 
-def normalize_metric_sample(sample, default_timestamp=None, metric_fields=None, stage=None, default_timezone=timezone.utc):
+def parse_metric_sample(sample, default_timestamp=None, metric_fields=None, stage=None, default_timezone=timezone.utc):
     if not isinstance(sample, dict):
         raise TypeError('采样记录必须是字典')
     timestamp_value = _first_value(sample, TIMESTAMP_FIELDS)
@@ -156,7 +156,7 @@ def normalize_metric_sample(sample, default_timestamp=None, metric_fields=None, 
         if not field_name:
             continue
         value = metrics_source.get(field_name, sample.get(field_name))
-        number = _metric_number(value)
+        number = telemetry_scalar(value)
         if number is not None:
             metrics[field_name] = number
     raw_stage = stage if stage is not None else _first_value(sample, STAGE_FIELDS)
@@ -170,7 +170,7 @@ def normalize_metric_sample(sample, default_timestamp=None, metric_fields=None, 
 
 
 def flatten_metric_sample(sample):
-    normalized = normalize_metric_sample(sample)
+    normalized = parse_metric_sample(sample)
     flattened = {
         'timestamp': normalized['timestamp'],
         'timestamp_ms': normalized['timestamp_ms'],
@@ -192,7 +192,7 @@ def _normalize_samples(samples, default_timestamp=None, metric_fields=None, igno
     rejected = []
     for index, sample in enumerate(samples):
         try:
-            records.append(normalize_metric_sample(sample, default_timestamp, metric_fields))
+            records.append(parse_metric_sample(sample, default_timestamp, metric_fields))
         except (TypeError, ValueError) as exc:
             if not ignore_invalid:
                 raise
@@ -217,7 +217,7 @@ def _primary_metric(records, requested_metric=None):
     coverage = {}
     for record in records:
         for field, value in record['metrics'].items():
-            if _metric_number(value) is not None:
+            if telemetry_scalar(value) is not None:
                 coverage[field] = coverage.get(field, 0) + 1
     if not coverage:
         return None
@@ -252,7 +252,7 @@ def _minmax_indices(records, max_points, metric):
     values = []
     last_value = None
     for record in records:
-        value = _metric_number(record['metrics'].get(metric)) if metric else None
+        value = telemetry_scalar(record['metrics'].get(metric)) if metric else None
         if value is None:
             value = last_value
         if value is not None:
@@ -365,12 +365,12 @@ def calculate_missing_intervals(samples, expected_interval_seconds=None, gap_fac
     }
 
 
-def data_quality_summary(samples, expected_interval_seconds=None, gap_factor=DEFAULT_GAP_FACTOR):
+def metric_data_quality(samples, expected_interval_seconds=None, gap_factor=DEFAULT_GAP_FACTOR):
     records, rejected = _normalize_samples(samples, ignore_invalid=True)
     original_records = []
     for sample in samples or []:
         try:
-            original_records.append(normalize_metric_sample(sample))
+            original_records.append(parse_metric_sample(sample))
         except (TypeError, ValueError):
             continue
     out_of_order_count = 0
@@ -477,7 +477,7 @@ def merge_stage_labels(samples, stages, default_stage=None, overwrite=False, ign
     return merged
 
 
-class InMemoryTimeSeriesStore:
+class TelemetryCache:
 
     def __init__(self, max_samples_per_series=DEFAULT_MAX_SAMPLES_PER_SERIES):
         try:
@@ -498,7 +498,7 @@ class InMemoryTimeSeriesStore:
             samples = [samples]
         prepared = []
         for sample in samples or []:
-            prepared.append(normalize_metric_sample(sample, stage=stage))
+            prepared.append(parse_metric_sample(sample, stage=stage))
         if not prepared:
             return {'series_id': key, 'written': 0, 'merged': 0, 'evicted': 0, 'sample_count': self.count_samples(key)}
         with self._lock:
@@ -567,7 +567,7 @@ class InMemoryTimeSeriesStore:
 
     def quality_summary(self, series_id, expected_interval_seconds=None, start=None, end=None):
         records = self.query_samples(series_id, start, end, limit=self.max_samples_per_series)
-        return data_quality_summary(records, expected_interval_seconds)
+        return metric_data_quality(records, expected_interval_seconds)
 
     def series_summary(self, series_id):
         key = str(series_id or '').strip()

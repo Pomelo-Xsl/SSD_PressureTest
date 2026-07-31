@@ -1,6 +1,7 @@
 import copy
-import hashlib
 from datetime import datetime, timedelta
+
+from common import datetime_string, number_value, scope_identity, text_digest, wall_datetime
 
 
 SEVERITY_RANK = {'信息': 1, '警告': 2, '严重': 3}
@@ -23,15 +24,6 @@ OPEN_ALERT_STATUSES = {'打开', '已确认'}
 CLOSED_ALERT_STATUSES = {'已关闭', '已恢复', '已抑制'}
 
 
-def alert_metric_number(value):
-    if value in (None, '', '--'):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _as_list(value):
     if value is None:
         return []
@@ -50,36 +42,6 @@ def _normalize_channels(channels, fallback=None):
         if value and value not in normalized:
             normalized.append(value)
     return normalized or list(DEFAULT_CHANNELS)
-
-
-def _parse_time(value):
-    if isinstance(value, datetime):
-        return value.replace(microsecond=0)
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    formats = [
-        '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%dT%H:%M:%S',
-        '%Y-%m-%d %H:%M',
-        '%Y-%m-%dT%H:%M',
-    ]
-    for item in formats:
-        try:
-            return datetime.strptime(text, item)
-        except ValueError:
-            continue
-    try:
-        return datetime.fromisoformat(text.replace('Z', '+00:00')).replace(tzinfo=None, microsecond=0)
-    except ValueError:
-        return None
-
-
-def _time_string(value):
-    parsed = _parse_time(value)
-    return parsed.strftime('%Y-%m-%d %H:%M:%S') if parsed else ''
 
 
 def _minute_of_day(value):
@@ -129,32 +91,16 @@ def _compare(actual, operator, threshold):
     return False
 
 
-def _scope_key(scope):
-    scope = scope or {}
-    for field in ('asset_id', 'serial', 'device_path', 'path', 'task_id', 'id'):
-        value = scope.get(field)
-        if value not in (None, ''):
-            return '{0}:{1}'.format(field, value)
-    return 'global'
-
-
-def _fingerprint(policy_id, rule_id, scope):
-    source = '{0}|{1}|{2}'.format(policy_id, rule_id, _scope_key(scope))
-    return hashlib.sha1(source.encode('utf-8')).hexdigest()[:24]
-
-
-def build_alert_fingerprint(policy_id, rule_id, scope):
-    return _fingerprint(policy_id, rule_id, scope)
+def alert_fingerprint(policy_id, rule_id, scope):
+    return text_digest(policy_id, rule_id, scope_identity(scope), length=24)
 
 
 def _alert_id(fingerprint, occurred_at):
-    source = '{0}|{1}'.format(fingerprint, _time_string(occurred_at))
-    return 'alert-{0}'.format(hashlib.sha1(source.encode('utf-8')).hexdigest()[:24])
+    return 'alert-{0}'.format(text_digest(fingerprint, datetime_string(occurred_at), length=24))
 
 
 def _notification_id(alert_id, channel):
-    source = '{0}|{1}'.format(alert_id, channel)
-    return 'notice-{0}'.format(hashlib.sha1(source.encode('utf-8')).hexdigest()[:24])
+    return 'notice-{0}'.format(text_digest(alert_id, channel, length=24))
 
 
 def _rule_message(rule, actual, scope):
@@ -174,13 +120,16 @@ def _rule_message(rule, actual, scope):
         try:
             return template.format(**values)[:MAX_MESSAGE_LENGTH]
         except (KeyError, IndexError, ValueError):
-            return '{0}：{1} {2} {3}，当前值 {4}'.format(values['rule'], values['metric'], values['operator'], values['threshold'], actual)[:MAX_MESSAGE_LENGTH]
-    return '{0}：{1} {2} {3}，当前值 {4}'.format(values['rule'], values['metric'], values['operator'], values['threshold'], actual)[:MAX_MESSAGE_LENGTH]
+            pass
+    return '{0}（{1}）触发 {2}：指标 {3} 当前为 {4}，规则条件为 {5} {6}'.format(
+        values['device'], values['path'], values['rule'], values['metric'],
+        actual, values['operator'], values['threshold']
+    )[:MAX_MESSAGE_LENGTH]
 
 
 def _history_time(alert):
     for field in ('last_seen_at', 'updated_at', 'created_at', 'opened_at', 'occurred_at', 'time'):
-        parsed = _parse_time(alert.get(field))
+        parsed = wall_datetime(alert.get(field))
         if parsed:
             return parsed
     return None
@@ -228,13 +177,13 @@ def _recently_suppressed(fingerprint, history, now, suppression_seconds):
             continue
         if _history_status(item) not in CLOSED_ALERT_STATUSES:
             continue
-        closed_at = _parse_time(item.get('closed_at')) or _history_time(item)
+        closed_at = wall_datetime(item.get('closed_at')) or _history_time(item)
         if closed_at and closed_at >= cutoff:
             return item
     return None
 
 
-def normalize_maintenance_window(window, index=1):
+def maintenance_window_config(window, index=1):
     source = copy.deepcopy(window or {})
     start = str(source.get('start') or '00:00').strip()
     end = str(source.get('end') or '00:00').strip()
@@ -272,12 +221,12 @@ def normalize_maintenance_window(window, index=1):
     }
 
 
-def normalize_alert_rule(rule, default_channels=None, index=1):
+def alert_rule_config(rule, default_channels=None, index=1):
     source = copy.deepcopy(rule or {})
     rule_id = str(source.get('id') or 'rule-{0}'.format(index)).strip()
     metric = str(source.get('metric') or '').strip()
     operator = str(source.get('operator') or '>=').strip()
-    threshold = alert_metric_number(source.get('threshold'))
+    threshold = number_value(source.get('threshold'))
     if not rule_id:
         raise ValueError('告警规则编号不能为空')
     if not metric:
@@ -324,7 +273,7 @@ def normalize_alert_rule(rule, default_channels=None, index=1):
     }
 
 
-def normalize_alert_policy(policy):
+def alert_policy_config(policy):
     source = copy.deepcopy(policy or {})
     policy_id = str(source.get('id') or 'default-alert-policy').strip()
     if not policy_id:
@@ -348,7 +297,7 @@ def normalize_alert_policy(policy):
     rules = []
     rule_ids = set()
     for index, rule in enumerate(source.get('rules') or [], 1):
-        normalized = normalize_alert_rule(rule, channels, index)
+        normalized = alert_rule_config(rule, channels, index)
         if normalized['id'] in rule_ids:
             raise ValueError('告警策略中存在重复规则编号：{0}'.format(normalized['id']))
         rule_ids.add(normalized['id'])
@@ -356,7 +305,7 @@ def normalize_alert_policy(policy):
     windows = []
     window_ids = set()
     for index, window in enumerate(source.get('maintenance_windows') or [], 1):
-        normalized = normalize_maintenance_window(window, index)
+        normalized = maintenance_window_config(window, index)
         if not normalized['id']:
             raise ValueError('维护窗口编号不能为空')
         if normalized['id'] in window_ids:
@@ -371,7 +320,7 @@ def normalize_alert_policy(policy):
             continue
         history.append({
             'version': item_version,
-            'published_at': _time_string(item.get('published_at')),
+            'published_at': datetime_string(item.get('published_at')),
             'reason': str(item.get('reason') or '').strip()[:240],
         })
     return {
@@ -386,19 +335,19 @@ def normalize_alert_policy(policy):
         'maintenance_windows': windows,
         'versions': history,
         'description': str(source.get('description') or '').strip()[:500],
-        'updated_at': _time_string(source.get('updated_at')),
+        'updated_at': datetime_string(source.get('updated_at')),
     }
 
 
 def create_policy_version(policy, changes=None, changed_at=None, reason=''):
-    current = normalize_alert_policy(policy)
+    current = alert_policy_config(policy)
     next_policy = copy.deepcopy(current)
     for key, value in (changes or {}).items():
         if key in ('id', 'version', 'versions'):
             continue
         next_policy[key] = copy.deepcopy(value)
     next_policy['version'] = current['version'] + 1
-    published_at = _time_string(changed_at or datetime.now())
+    published_at = datetime_string(changed_at or datetime.now())
     versions = list(current.get('versions') or [])
     versions.append({
         'version': current['version'],
@@ -407,14 +356,14 @@ def create_policy_version(policy, changes=None, changed_at=None, reason=''):
     })
     next_policy['versions'] = versions
     next_policy['updated_at'] = published_at
-    normalized = normalize_alert_policy(next_policy)
+    normalized = alert_policy_config(next_policy)
     normalized['versions'][-1]['reason'] = str(reason or normalized['versions'][-1]['reason'])[:240]
     return normalized
 
 
 def active_maintenance_windows(policy, now, severity=None):
-    normalized = normalize_alert_policy(policy)
-    current = _parse_time(now) or datetime.now()
+    normalized = alert_policy_config(policy)
+    current = wall_datetime(now) or datetime.now()
     minute = current.hour * 60 + current.minute
     weekday = current.weekday()
     result = []
@@ -438,14 +387,14 @@ def active_maintenance_windows(policy, now, severity=None):
     return result
 
 
-def evaluate_alert_policy(policy, metrics, scope=None, alert_history=None, now=None):
-    normalized = normalize_alert_policy(policy)
-    current = _parse_time(now) or datetime.now().replace(microsecond=0)
+def apply_alert_policy(policy, metrics, scope=None, alert_history=None, now=None):
+    normalized = alert_policy_config(policy)
+    current = wall_datetime(now) or datetime.now().replace(microsecond=0)
     history = list(alert_history or [])
     outcome = {
         'policy_id': normalized['id'],
         'policy_version': normalized['version'],
-        'evaluated_at': _time_string(current),
+        'evaluated_at': datetime_string(current),
         'matches': [],
         'suppressed': [],
         'notifications': [],
@@ -460,14 +409,14 @@ def evaluate_alert_policy(policy, metrics, scope=None, alert_history=None, now=N
             outcome['skipped'].append({'rule_id': rule['id'], 'reason': '规则已停用'})
             continue
         raw_value = _metric_value(metrics, rule['metric'])
-        actual = alert_metric_number(raw_value)
+        actual = number_value(raw_value)
         if actual is None:
             outcome['skipped'].append({'rule_id': rule['id'], 'reason': '指标值不可用', 'metric': rule['metric']})
             continue
         if not _compare(actual, rule['operator'], rule['threshold']):
             outcome['skipped'].append({'rule_id': rule['id'], 'reason': '未满足触发条件', 'actual': actual})
             continue
-        fingerprint = _fingerprint(normalized['id'], rule['id'], scope)
+        fingerprint = alert_fingerprint(normalized['id'], rule['id'], scope)
         occurrences = _rule_occurrence_count(rule['id'], fingerprint, history, current, rule['trigger_window_seconds'])
         if occurrences + 1 < rule['trigger_after']:
             outcome['skipped'].append({'rule_id': rule['id'], 'reason': '连续触发次数不足', 'actual': actual, 'occurrences': occurrences + 1, 'required': rule['trigger_after']})
@@ -485,7 +434,7 @@ def evaluate_alert_policy(policy, metrics, scope=None, alert_history=None, now=N
             'threshold': rule['threshold'],
             'actual': actual,
             'scope': scope,
-            'occurred_at': _time_string(current),
+            'occurred_at': datetime_string(current),
             'status': '打开',
             'message': _rule_message(rule, actual, scope),
             'channels': list(rule['channels']),
@@ -520,7 +469,7 @@ def evaluate_alert_policy(policy, metrics, scope=None, alert_history=None, now=N
 
 
 def prepare_notification_outbox(alerts, now=None):
-    current = _parse_time(now) or datetime.now().replace(microsecond=0)
+    current = wall_datetime(now) or datetime.now().replace(microsecond=0)
     records = []
     seen = set()
     for alert in alerts or []:
@@ -537,7 +486,7 @@ def prepare_notification_outbox(alerts, now=None):
                 'fingerprint': alert.get('fingerprint'),
                 'channel': channel,
                 'status': '待发送',
-                'created_at': _time_string(current),
+                'created_at': datetime_string(current),
                 'payload': {
                     'title': '{0}：{1}'.format(alert.get('severity') or '告警', alert.get('rule_name') or alert.get('rule_id') or '未命名规则'),
                     'message': alert.get('message') or '',
@@ -554,15 +503,15 @@ def prepare_notification_outbox(alerts, now=None):
 
 def mark_notification_result(record, succeeded, processed_at=None, error_text=''):
     result = copy.deepcopy(record or {})
-    current = _parse_time(processed_at) or datetime.now().replace(microsecond=0)
+    current = wall_datetime(processed_at) or datetime.now().replace(microsecond=0)
     result['status'] = '已发送' if succeeded else '发送失败'
-    result['processed_at'] = _time_string(current)
+    result['processed_at'] = datetime_string(current)
     result['error_text'] = '' if succeeded else str(error_text or '未知通知错误')[:500]
     return result
 
 
-def policy_summary(policy):
-    normalized = normalize_alert_policy(policy)
+def policy_overview(policy):
+    normalized = alert_policy_config(policy)
     severity_counts = {'信息': 0, '警告': 0, '严重': 0}
     enabled_rules = 0
     for rule in normalized['rules']:
@@ -585,7 +534,7 @@ def policy_summary(policy):
 ALERT_SEVERITIES = {'警告': 2, '严重': 3}
 
 
-def build_alerts(tasks):
+def alerts_for_tasks(tasks):
     alerts = []
     for task in tasks:
         for index, event in enumerate(task.get('events') or []):
@@ -599,7 +548,7 @@ def build_alerts(tasks):
     return sorted(alerts, key=lambda alert: (ALERT_SEVERITIES[alert['severity']], alert.get('time') or ''), reverse=True)
 
 
-def alert_summary(alerts):
+def alert_overview(alerts):
     summary = {'total': len(alerts), 'critical': 0, 'warning': 0, 'acknowledged': 0, 'unacknowledged': 0}
     for alert in alerts:
         if alert['severity'] == '严重':

@@ -1,6 +1,8 @@
 import re
 from datetime import datetime
 
+from common import number_in_text as _number, parse_datetime_value as _timestamp, text_value as _text
+
 
 CAPACITY_UNITS = {
     'B': 1,
@@ -19,40 +21,6 @@ SNAPSHOT_VALUE_FIELDS = ('asset_id', 'serial', 'name', 'model', 'path', 'interfa
 FIRMWARE_FIELDS = ('firmware', 'firmware_version', 'fwrev', 'revision')
 HEALTH_STABLE_DELTA = 0.1
 CAPACITY_CHANGE_RATIO = 0.01
-
-
-def _text(value, default=''):
-    if value is None:
-        return default
-    text = str(value).strip()
-    return text if text and text != '--' else default
-
-
-def _number(value):
-    if value is None or value == '' or value == '--':
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        match = re.search(r'-?\d+(?:\.\d+)?', str(value))
-        return float(match.group()) if match else None
-
-
-def _timestamp(value):
-    text = _text(value)
-    if not text:
-        return None
-    for candidate in (text, text.replace('Z', '+00:00')):
-        try:
-            return datetime.fromisoformat(candidate)
-        except ValueError:
-            continue
-    for pattern in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
-        try:
-            return datetime.strptime(text, pattern)
-        except ValueError:
-            continue
-    return None
 
 
 def _format_capacity(capacity_bytes):
@@ -141,7 +109,7 @@ def device_history_key(snapshot):
     return 'device:{0}|{1}'.format(path, model)
 
 
-def normalize_device_snapshot(snapshot, captured_at=None):
+def device_snapshot_record(snapshot, captured_at=None):
     source = _snapshot_source(snapshot or {})
     capacity_bytes = _capacity_from_snapshot(source)
     health = _number(source.get('health'))
@@ -196,8 +164,8 @@ def _capacity_change(before, after):
 
 
 def compare_device_snapshots(previous_snapshot, current_snapshot):
-    previous = normalize_device_snapshot(previous_snapshot)
-    current = normalize_device_snapshot(current_snapshot)
+    previous = device_snapshot_record(previous_snapshot)
+    current = device_snapshot_record(current_snapshot)
     same_asset = previous['asset_id'] == current['asset_id']
     firmware = _value_change(previous['firmware'], current['firmware'], same_asset)
     interface = _value_change(previous['interface'], current['interface'], same_asset)
@@ -246,7 +214,7 @@ def _trend_direction(start, current, stable_delta=HEALTH_STABLE_DELTA):
 
 
 def _ordered_snapshots(snapshots):
-    normalized = [normalize_device_snapshot(item) for item in snapshots if isinstance(item, dict)]
+    normalized = [device_snapshot_record(item) for item in snapshots if isinstance(item, dict)]
     indexed = list(enumerate(normalized))
     def sort_key(item):
         captured_at = _timestamp(item[1]['captured_at'])
@@ -257,7 +225,7 @@ def _ordered_snapshots(snapshots):
     return [item[1] for item in indexed]
 
 
-def build_health_trend(snapshots):
+def health_timeline(snapshots):
     timeline = _ordered_snapshots(snapshots or [])
     health_points = [item for item in timeline if item['health'] is not None]
     temperature_points = [item for item in timeline if item['temperature'] is not None]
@@ -281,9 +249,9 @@ def build_health_trend(snapshots):
     }
 
 
-def summarize_device_history(snapshots):
+def device_history_overview(snapshots):
     timeline = _ordered_snapshots(snapshots or [])
-    trend = build_health_trend(timeline)
+    trend = health_timeline(timeline)
     latest_change = compare_device_snapshots(timeline[-2], timeline[-1]) if len(timeline) >= 2 else None
     firmware_versions = []
     for item in timeline:

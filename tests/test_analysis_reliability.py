@@ -1,6 +1,6 @@
 import unittest
 
-from reliability_metrics import health_decline, latency_slo, temperature_dwell, throughput_jitter
+from analysis_engine import health_decline, latency_slo, temperature_dwell, throughput_jitter
 
 
 class ReliabilityMetricTests(unittest.TestCase):

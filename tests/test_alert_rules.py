@@ -1,6 +1,6 @@
 import unittest
 
-from alerts import active_maintenance_windows, build_alert_fingerprint, create_policy_version, evaluate_alert_policy, mark_notification_result, normalize_alert_policy, policy_summary, prepare_notification_outbox
+from alerts import active_maintenance_windows, alert_fingerprint, create_policy_version, apply_alert_policy, mark_notification_result, alert_policy_config, policy_overview, prepare_notification_outbox
 
 
 def sample_policy():
@@ -53,10 +53,10 @@ class AlertRuleTests(unittest.TestCase):
         self.scope = {'asset_id': 'asset-ssd-a', 'device': 'Enterprise SSD', 'path': '/dev/nvme1n1', 'task_id': 'task-a'}
 
     def test_normalize_policy_deduplicates_channels_and_produces_summary(self):
-        policy = normalize_alert_policy(self.policy)
+        policy = alert_policy_config(self.policy)
         self.assertEqual(policy['channels'], ['web', 'audit'])
         self.assertEqual(policy['rules'][0]['channels'], ['webhook'])
-        summary = policy_summary(policy)
+        summary = policy_overview(policy)
         self.assertEqual(summary['rule_count'], 2)
         self.assertEqual(summary['severity_counts']['严重'], 1)
 
@@ -68,7 +68,7 @@ class AlertRuleTests(unittest.TestCase):
         self.assertEqual(changed['versions'][0]['reason'], '提高温度规则可见性')
 
     def test_metric_rule_creates_alert_and_notification_outbox(self):
-        result = evaluate_alert_policy(self.policy, {'temperature': 72, 'latency': {'p99': 8}}, self.scope, now='2026-07-29 10:00:00')
+        result = apply_alert_policy(self.policy, {'temperature': 72, 'latency': {'p99': 8}}, self.scope, now='2026-07-29 10:00:00')
         self.assertEqual(len(result['matches']), 1)
         alert = result['matches'][0]
         self.assertEqual(alert['rule_id'], 'temperature-critical')
@@ -79,20 +79,20 @@ class AlertRuleTests(unittest.TestCase):
         self.assertEqual(result['notifications'][0]['status'], '待发送')
 
     def test_duplicate_open_alert_is_suppressed(self):
-        first = evaluate_alert_policy(self.policy, {'temperature': 72}, self.scope, now='2026-07-29 10:00:00')
+        first = apply_alert_policy(self.policy, {'temperature': 72}, self.scope, now='2026-07-29 10:00:00')
         history = list(first['matches'])
         history[0]['last_seen_at'] = '2026-07-29 10:01:00'
-        repeated = evaluate_alert_policy(self.policy, {'temperature': 73}, self.scope, history, '2026-07-29 10:02:00')
+        repeated = apply_alert_policy(self.policy, {'temperature': 73}, self.scope, history, '2026-07-29 10:02:00')
         self.assertEqual(len(repeated['matches']), 0)
         self.assertEqual(len(repeated['suppressed']), 1)
         self.assertIn('去重', repeated['suppressed'][0]['suppression_reason'])
 
     def test_closed_alert_uses_suppression_cooldown(self):
-        first = evaluate_alert_policy(self.policy, {'temperature': 72}, self.scope, now='2026-07-29 10:00:00')
+        first = apply_alert_policy(self.policy, {'temperature': 72}, self.scope, now='2026-07-29 10:00:00')
         history = list(first['matches'])
         history[0]['status'] = '已关闭'
         history[0]['closed_at'] = '2026-07-29 10:03:00'
-        repeated = evaluate_alert_policy(self.policy, {'temperature': 73}, self.scope, history, '2026-07-29 10:05:00')
+        repeated = apply_alert_policy(self.policy, {'temperature': 73}, self.scope, history, '2026-07-29 10:05:00')
         self.assertEqual(len(repeated['matches']), 0)
         self.assertIn('抑制', repeated['suppressed'][0]['suppression_reason'])
 
@@ -102,31 +102,31 @@ class AlertRuleTests(unittest.TestCase):
         history = [{
             'id': 'latency-observation',
             'rule_id': 'latency-streak',
-            'fingerprint': build_alert_fingerprint('enterprise-nvme', 'latency-streak', self.scope),
+            'fingerprint': alert_fingerprint('enterprise-nvme', 'latency-streak', self.scope),
             'status': '已关闭',
             'occurred_at': '2026-07-28 00:25:00',
             'closed_at': '2026-07-27 00:00:00',
         }]
-        second = evaluate_alert_policy(self.policy, {'latency': {'p99': 25}}, self.scope, history, '2026-07-28 00:30:00')
+        second = apply_alert_policy(self.policy, {'latency': {'p99': 25}}, self.scope, history, '2026-07-28 00:30:00')
         self.assertEqual(len(second['suppressed']), 1)
         self.assertIn('维护窗口', second['suppressed'][0]['suppression_reason'])
 
     def test_streak_rule_waits_for_required_occurrences(self):
-        first = evaluate_alert_policy(self.policy, {'latency': {'p99': 25}}, self.scope, now='2026-07-29 10:00:00')
+        first = apply_alert_policy(self.policy, {'latency': {'p99': 25}}, self.scope, now='2026-07-29 10:00:00')
         self.assertEqual(len(first['matches']), 0)
         skipped = [item for item in first['skipped'] if item.get('rule_id') == 'latency-streak']
         self.assertEqual(skipped[0]['reason'], '连续触发次数不足')
         self.assertEqual(skipped[0]['occurrences'], 1)
-        policy = normalize_alert_policy(self.policy)
+        policy = alert_policy_config(self.policy)
         synthetic_history = [{
             'id': 'old',
             'rule_id': 'latency-streak',
-            'fingerprint': build_alert_fingerprint(policy['id'], 'latency-streak', self.scope),
+            'fingerprint': alert_fingerprint(policy['id'], 'latency-streak', self.scope),
             'status': '已关闭',
             'closed_at': '2026-07-29 09:00:00',
             'occurred_at': '2026-07-29 10:00:00',
         }]
-        second = evaluate_alert_policy(policy, {'temperature': 0, 'latency': {'p99': 25}}, self.scope, synthetic_history, '2026-07-29 10:00:03')
+        second = apply_alert_policy(policy, {'temperature': 0, 'latency': {'p99': 25}}, self.scope, synthetic_history, '2026-07-29 10:00:03')
         self.assertEqual(len(second['matches']), 1)
         self.assertEqual(second['matches'][0]['rule_id'], 'latency-streak')
 

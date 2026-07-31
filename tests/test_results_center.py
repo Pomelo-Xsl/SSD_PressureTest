@@ -1,6 +1,6 @@
 import unittest
 
-from results_center import build_filter_facets, build_history_trend, compare_results, normalize_result, query_results
+from results_center import filter_facets, history_trend, compare_results, result_record, query_results
 
 
 def result(task_id, device, score, risk, started_at, status='已完成', conclusion='通过'):
@@ -52,7 +52,7 @@ class ResultCenterTests(unittest.TestCase):
             },
             'analysis_json': {'score': 88, 'risk_level': '低风险', 'conclusion': '通过'},
         }
-        item = normalize_result(nested)
+        item = result_record(nested)
         self.assertEqual(item['task_id'], 'nested-1')
         self.assertEqual(item['temperature_max'], 57.0)
         self.assertEqual(item['throughput_avg'], 1300.0)
@@ -75,7 +75,7 @@ class ResultCenterTests(unittest.TestCase):
         self.assertEqual(page['items'], [])
 
     def test_filter_facets_expose_available_options_with_counts(self):
-        facets = build_filter_facets(self.results)
+        facets = filter_facets(self.results)
         devices = {item['value']: item['count'] for item in facets['device']}
         self.assertEqual(devices['Enterprise A'], 2)
         self.assertEqual(devices['Enterprise B'], 1)
@@ -98,7 +98,7 @@ class ResultCenterTests(unittest.TestCase):
 
     def test_history_trend_groups_sorts_and_calculates_direction(self):
         history = [self.results[1], self.results[0], self.results[2]]
-        trend = build_history_trend(history, group_by='device')
+        trend = history_trend(history, group_by='device')
         group = trend['groups'][0]
         self.assertEqual(group['key'], 'Enterprise A')
         self.assertEqual([item['task_id'] for item in group['points']], ['task-1', 'task-2'])
@@ -108,7 +108,7 @@ class ResultCenterTests(unittest.TestCase):
 
     def test_history_rejects_unknown_grouping(self):
         with self.assertRaises(ValueError):
-            build_history_trend(self.results, group_by='unknown')
+            history_trend(self.results, group_by='unknown')
 
 
 if __name__ == '__main__':

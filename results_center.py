@@ -1,5 +1,7 @@
 import json
 
+from common import metric_series, number_value
+
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -23,15 +25,6 @@ def _mapping(value):
     return {}
 
 
-def _number(value):
-    if isinstance(value, bool) or value in (None, '', '--'):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _value(source, task, names, default=None):
     for name in names:
         value = source.get(name)
@@ -46,18 +39,7 @@ def _value(source, task, names, default=None):
 
 def _metric_value(metrics, metric_name, field):
     metric = _mapping(metrics.get(metric_name))
-    return _number(metric.get(field))
-
-
-def _sample_values(samples, field):
-    values = []
-    for sample in samples:
-        if not isinstance(sample, dict):
-            continue
-        value = _number(sample.get(field))
-        if value is not None:
-            values.append(value)
-    return values
+    return number_value(metric.get(field))
 
 
 def _average(values):
@@ -79,20 +61,20 @@ def _analysis_and_task(record):
     return source, task, analysis
 
 
-def normalize_result(record):
+def result_record(record):
     source, task, analysis = _analysis_and_task(record)
     metrics = _mapping(analysis.get('metrics'))
     samples = task.get('samples') or source.get('samples') or []
-    temperatures = _sample_values(samples, 'temperature')
-    latencies = _sample_values(samples, 'p99')
-    throughputs = _sample_values(samples, 'throughput')
-    health_values = _sample_values(samples, 'health')
-    score = _number(_value(source, analysis, ('score',)))
-    progress = _number(_value(source, task, ('progress',)))
-    temperature_max = _number(_value(source, task, ('temperature_max', 'max_temperature')))
-    latency_p95 = _number(_value(source, task, ('latency_p95', 'p99_p95')))
-    throughput_avg = _number(_value(source, task, ('throughput_avg', 'average_throughput')))
-    health_min = _number(_value(source, task, ('health_min', 'minimum_health')))
+    temperatures = metric_series(samples, 'temperature')
+    latencies = metric_series(samples, 'p99')
+    throughputs = metric_series(samples, 'throughput')
+    health_values = metric_series(samples, 'health')
+    score = number_value(_value(source, analysis, ('score',)))
+    progress = number_value(_value(source, task, ('progress',)))
+    temperature_max = number_value(_value(source, task, ('temperature_max', 'max_temperature')))
+    latency_p95 = number_value(_value(source, task, ('latency_p95', 'p99_p95')))
+    throughput_avg = number_value(_value(source, task, ('throughput_avg', 'average_throughput')))
+    health_min = number_value(_value(source, task, ('health_min', 'minimum_health')))
     if temperature_max is None:
         temperature_max = _metric_value(metrics, 'temperature', 'max')
     if latency_p95 is None:
@@ -151,8 +133,8 @@ def _matches_filters(item, filters):
         searchable = ' '.join(str(item.get(field) or '') for field in ('task_id', 'device', 'serial', 'path', 'plan', 'conclusion', 'risk_level')).casefold()
         if search not in searchable:
             return False
-    score_min = _number(filters.get('score_min'))
-    score_max = _number(filters.get('score_max'))
+    score_min = number_value(filters.get('score_min'))
+    score_max = number_value(filters.get('score_max'))
     if score_min is not None and (item.get('score') is None or item['score'] < score_min):
         return False
     if score_max is not None and (item.get('score') is None or item['score'] > score_max):
@@ -191,7 +173,7 @@ def _sort_items(items, sort_by, descending):
 
 def query_results(records, filters=None, page=1, page_size=DEFAULT_PAGE_SIZE, sort_by='started_at', descending=True):
     active_filters = dict(filters or {})
-    normalized = [normalize_result(record) for record in records or []]
+    normalized = [result_record(record) for record in records or []]
     matched = [item for item in normalized if _matches_filters(item, active_filters)]
     ordered = _sort_items(matched, sort_by, bool(descending))
     size = _integer(page_size, DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
@@ -211,8 +193,8 @@ def query_results(records, filters=None, page=1, page_size=DEFAULT_PAGE_SIZE, so
     }
 
 
-def build_filter_facets(records):
-    normalized = [normalize_result(record) for record in records or []]
+def filter_facets(records):
+    normalized = [result_record(record) for record in records or []]
     facets = {}
     for field in FILTER_FIELDS:
         counts = {}
@@ -254,7 +236,7 @@ def _metric_comparison(items, field, label, higher_is_better):
 
 
 def compare_results(records):
-    items = [normalize_result(record) for record in records or []]
+    items = [result_record(record) for record in records or []]
     if not MIN_COMPARISON_RESULTS <= len(items) <= MAX_COMPARISON_RESULTS:
         raise ValueError('请选择 {0} 至 {1} 条测试结果进行对比'.format(MIN_COMPARISON_RESULTS, MAX_COMPARISON_RESULTS))
     comparisons = [
@@ -321,12 +303,12 @@ def _metric_trend(points, field, higher_is_better):
     }
 
 
-def build_history_trend(records, group_by='device'):
+def history_trend(records, group_by='device'):
     if group_by not in TREND_GROUP_FIELDS:
         raise ValueError('历史趋势分组字段不支持：{0}'.format(group_by))
     grouped = {}
     for record in records or []:
-        item = normalize_result(record)
+        item = result_record(record)
         key = item.get(group_by) or '未标识'
         grouped.setdefault(key, []).append(item)
     groups = []

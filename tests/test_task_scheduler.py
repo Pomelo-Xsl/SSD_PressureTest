@@ -1,6 +1,6 @@
 import unittest
 
-from test_workflow import next_runnable_task, queue_position, summarize_queue
+from test_workflow import next_runnable_task, queue_position, queue_overview
 
 
 class TaskSchedulerTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class TaskSchedulerTests(unittest.TestCase):
     def test_active_task_blocks_next_start(self):
         tasks = [{'id': 'running', 'status': '运行中', 'priority': '普通'}, {'id': 'queued', 'status': '排队中', 'priority': '紧急'}]
         self.assertIsNone(next_runnable_task(tasks))
-        summary = summarize_queue(tasks)
+        summary = queue_overview(tasks)
         self.assertEqual(summary['active_count'], 1)
         self.assertEqual(summary['queued_count'], 1)
 

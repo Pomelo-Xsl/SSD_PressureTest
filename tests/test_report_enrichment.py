@@ -2,10 +2,10 @@ import unittest
 
 from report_enrichment import (
     assess_telemetry_data_quality,
-    build_report_evidence,
+    report_evidence,
     stage_result_overview,
-    summarize_alert_lifecycle,
-    summarize_asset_history,
+    alert_lifecycle_evidence,
+    asset_history_evidence,
 )
 
 
@@ -70,7 +70,7 @@ class ReportEnrichmentTests(unittest.TestCase):
             {'captured_at': '2026-07-27 09:00:00', 'asset_id': 'asset-01', 'firmware': '1.0', 'interface': 'NVMe', 'capacity': '3.84 TB', 'health': 100, 'temperature': 39},
             {'captured_at': '2026-07-29 09:00:00', 'asset_id': 'asset-01', 'firmware': '1.1', 'interface': 'NVMe', 'capacity': '3.84 TB', 'health': 99.4, 'temperature': 48},
         ]
-        summary = summarize_asset_history(task_template(), history)
+        summary = asset_history_evidence(task_template(), history)
         self.assertTrue(summary['available'])
         self.assertEqual(summary['snapshot_count'], 2)
         self.assertEqual(summary['health']['trend'], '下降')
@@ -79,7 +79,7 @@ class ReportEnrichmentTests(unittest.TestCase):
         self.assertEqual(summary['changes'][0]['field'], 'firmware')
 
     def test_alert_lifecycle_tracks_acknowledged_and_open_critical_alerts(self):
-        lifecycle = summarize_alert_lifecycle(task_template())
+        lifecycle = alert_lifecycle_evidence(task_template())
         self.assertEqual(lifecycle['total'], 2)
         self.assertEqual(lifecycle['acknowledged'], 1)
         self.assertEqual(lifecycle['open_critical'], 1)
@@ -91,7 +91,7 @@ class ReportEnrichmentTests(unittest.TestCase):
             {'id': 'external-01', 'task_id': task['id'], 'severity': 'critical', 'opened_at': '2026-07-29 09:00:00', 'acknowledged_at': '2026-07-29 09:01:00', 'closed_at': '2026-07-29 09:02:00', 'message': '温度已恢复'},
             {'id': 'other-task', 'task_id': 'other', 'severity': 'warning', 'time': '2026-07-29 09:00:00'},
         ]
-        lifecycle = summarize_alert_lifecycle(task, alerts)
+        lifecycle = alert_lifecycle_evidence(task, alerts)
         self.assertEqual(lifecycle['source'], '传入告警记录')
         self.assertEqual(lifecycle['closed'], 1)
         self.assertEqual(lifecycle['closure_rate_pct'], 100.0)
@@ -100,7 +100,7 @@ class ReportEnrichmentTests(unittest.TestCase):
     def test_combined_evidence_marks_incomplete_data_and_open_critical_alert(self):
         task = task_template(samples=[], stage_results=[])
         analysis = {'algorithm': 'SSD Stability Score v2.0', 'score': 72, 'conclusion': '预警', 'risk_level': '中风险', 'limitations': ['样本不足']}
-        evidence = build_report_evidence(task, analysis)
+        evidence = report_evidence(task, analysis)
         self.assertFalse(evidence['report_ready'])
         self.assertEqual(evidence['analysis']['conclusion'], '预警')
         self.assertEqual(evidence['data_quality']['level'], '不足')

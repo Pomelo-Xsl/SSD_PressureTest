@@ -1,23 +1,64 @@
 from math import sqrt
 from statistics import mean, median
-from reliability_metrics import reliability_snapshot
+
+from common import metric_series, number_value
+
 SEVERITY_WEIGHT = {'信息': 0, '警告': 3, '严重': 12}
 
-def _number(value):
-    if isinstance(value, bool) or value in (None, '', '--'):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
-def _series(samples, field):
+def numeric_values(samples, field):
     values = []
     for sample in samples:
-        value = _number(sample.get(field))
-        if value is not None:
-            values.append(value)
+        value = sample.get(field)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        values.append(number)
     return values
+
+
+def temperature_dwell(samples, threshold):
+    temperatures = numeric_values(samples, 'temperature')
+    if not temperatures:
+        return {'available': False, 'sample_count': 0, 'near_limit_count': 0, 'over_limit_count': 0, 'near_limit_pct': None}
+    near_limit = sum(value >= threshold - 5 for value in temperatures)
+    over_limit = sum(value >= threshold for value in temperatures)
+    return {'available': True, 'sample_count': len(temperatures), 'near_limit_count': near_limit, 'over_limit_count': over_limit, 'near_limit_pct': round(near_limit / len(temperatures) * 100, 2)}
+
+
+def latency_slo(samples, target_ms=20):
+    values = numeric_values(samples, 'p99')
+    if not values:
+        return {'available': False, 'target_ms': target_ms, 'pass_rate_pct': None, 'violations': 0}
+    violations = sum(value > target_ms for value in values)
+    return {'available': True, 'target_ms': target_ms, 'pass_rate_pct': round((len(values) - violations) / len(values) * 100, 2), 'violations': violations, 'worst_ms': round(max(values), 2)}
+
+
+def throughput_jitter(samples):
+    values = numeric_values(samples, 'throughput')
+    if len(values) < 2:
+        return {'available': False, 'jitter_pct': None, 'drop_count': 0}
+    average = mean(values)
+    differences = [abs(current - previous) for previous, current in zip(values, values[1:])]
+    jitter = mean(differences) / average * 100 if average else 0
+    drops = sum(current < previous * 0.8 for previous, current in zip(values, values[1:]))
+    return {'available': True, 'jitter_pct': round(jitter, 2), 'drop_count': drops, 'average_mbps': round(average, 2)}
+
+
+def health_decline(samples):
+    values = numeric_values(samples, 'health')
+    if len(values) < 2:
+        return {'available': False, 'decline_pct': None, 'per_sample_pct': None}
+    decline = values[0] - values[-1]
+    return {'available': True, 'decline_pct': round(decline, 3), 'per_sample_pct': round(decline / (len(values) - 1), 4), 'start_pct': values[0], 'end_pct': values[-1]}
+
+
+def reliability_snapshot(task):
+    samples = task.get('samples') or []
+    threshold = task.get('threshold_temp') or 70
+    return {'temperature_dwell': temperature_dwell(samples, threshold), 'latency_slo': latency_slo(samples), 'throughput_jitter': throughput_jitter(samples), 'health_decline': health_decline(samples)}
+
 
 def _percentile(values, percentage):
     if not values:
@@ -100,8 +141,8 @@ def _thermal_stability(samples, threshold):
     temperatures = []
     throughput = []
     for sample in samples:
-        temperature = _number(sample.get('temperature'))
-        sample_throughput = _number(sample.get('throughput'))
+        temperature = number_value(sample.get('temperature'))
+        sample_throughput = number_value(sample.get('throughput'))
         if temperature is not None and sample_throughput is not None:
             temperatures.append(temperature)
             throughput.append(sample_throughput)
@@ -152,14 +193,14 @@ def _historical_baseline(task, history):
     latency_baseline = []
     for item in candidates:
         historical_samples = item.get('samples') or []
-        throughput_values = _series(historical_samples, 'throughput')
-        latency_values = _series(historical_samples, 'p99')
+        throughput_values = metric_series(historical_samples, 'throughput')
+        latency_values = metric_series(historical_samples, 'p99')
         if throughput_values:
             throughput_baseline.append(mean(throughput_values))
         if latency_values:
             latency_baseline.append(mean(latency_values))
-    current_throughput = _series(task.get('samples') or [], 'throughput')
-    current_latency = _series(task.get('samples') or [], 'p99')
+    current_throughput = metric_series(task.get('samples') or [], 'throughput')
+    current_latency = metric_series(task.get('samples') or [], 'p99')
     if not throughput_baseline and (not latency_baseline):
         return {'available': False, 'count': len(candidates), 'assessment': '历史任务缺少可比遥测数据'}
     result = {'available': True, 'count': len(candidates), 'assessment': '与同设备、同模式、同压力参数的历史任务对比'}
@@ -307,12 +348,12 @@ def _event_assessment(events):
 def analyze_task(task, history=None):
     samples = task.get('samples') or []
     events = task.get('events') or []
-    temperature_values = _series(samples, 'temperature')
-    latency_values = _series(samples, 'p99')
-    throughput_values = _series(samples, 'throughput')
-    health_values = _series(samples, 'health')
-    threshold = _number(task.get('threshold_temp')) or 70
-    progress = _number(task.get('progress')) or 0
+    temperature_values = metric_series(samples, 'temperature')
+    latency_values = metric_series(samples, 'p99')
+    throughput_values = metric_series(samples, 'throughput')
+    health_values = metric_series(samples, 'health')
+    threshold = number_value(task.get('threshold_temp')) or 70
+    progress = number_value(task.get('progress')) or 0
     status = task.get('status', '未知')
     if status == '已完成' and progress >= 100:
         completion_penalty = 0

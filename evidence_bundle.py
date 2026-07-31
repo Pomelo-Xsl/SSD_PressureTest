@@ -1,9 +1,10 @@
-import hashlib
 import json
 import os
 import tempfile
 import zipfile
 from pathlib import Path
+
+from common import bytes_digest
 
 
 BUNDLE_FORMAT = 'ssd-pressure-test-evidence-bundle'
@@ -103,16 +104,12 @@ def _canonical_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 
-def _sha256(data):
-    return hashlib.sha256(data).hexdigest()
-
-
 def _build_manifest(items, metadata):
     files = []
     for name, data in items:
         files.append({
             'name': name,
-            'sha256': _sha256(data),
+            'sha256': bytes_digest(data),
             'size_bytes': len(data),
         })
     return {
@@ -132,7 +129,7 @@ def _zip_info(name):
     return info
 
 
-def build_evidence_bundle(bundle_path, payloads, metadata=None):
+def pack_evidence_archive(bundle_path, payloads, metadata=None):
     target = Path(bundle_path)
     items = _payload_items(payloads)
     manifest = _build_manifest(items, _normalize_metadata(metadata))
@@ -308,7 +305,7 @@ def read_evidence_bundle(bundle_path):
                 raise EvidenceBundleVerificationError('无法读取证据文件 {0}: {1}'.format(name, exc))
             if len(data) != descriptor['size_bytes']:
                 raise EvidenceBundleVerificationError('证据文件读取长度不正确: {0}'.format(name))
-            actual_digest = _sha256(data)
+            actual_digest = bytes_digest(data)
             if actual_digest != descriptor['sha256']:
                 raise EvidenceBundleVerificationError('证据文件 SHA-256 校验失败: {0}'.format(name))
             payloads[name] = data

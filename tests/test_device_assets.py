@@ -1,6 +1,6 @@
 import unittest
 
-from runtime_ops import enrich_device, summarize_inventory
+from runtime_ops import enrich_device, inventory_overview
 
 
 class DeviceAssetTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class DeviceAssetTests(unittest.TestCase):
     def test_partitioned_device_is_high_risk(self):
         device = enrich_device({'name': 'System SSD', 'serial': 'SN-2', 'path': '/dev/nvme0n1', 'interface': 'NVMe', 'testable': False, 'test_reasons': ['磁盘含有分区，禁止裸盘测试']})
         self.assertEqual(device['risk']['level'], '高')
-        summary = summarize_inventory([device])
+        summary = inventory_overview([device])
         self.assertEqual(summary['high_risk'], 1)
 
 

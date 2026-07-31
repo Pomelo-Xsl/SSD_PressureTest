@@ -25,10 +25,10 @@ class TaskRequest:
 class TaskCreationTests(unittest.TestCase):
 
     def setUp(self):
-        self.original_state = copy.deepcopy(app.STATE)
-        app.STATE['plans'] = copy.deepcopy(app.DEFAULT_PLANS)
-        app.STATE['tasks'] = []
-        app.STATE['alert_policies'] = []
+        self.original_state = copy.deepcopy(app.RUNTIME.data)
+        app.RUNTIME.plans = copy.deepcopy(app.DEFAULT_PLANS)
+        app.RUNTIME.tasks = []
+        app.RUNTIME.alert_policies = []
         self.device = {
             'id': 'demo-nvme0',
             'path': '/dev/nvme0n1',
@@ -41,8 +41,8 @@ class TaskCreationTests(unittest.TestCase):
         }
 
     def tearDown(self):
-        app.STATE.clear()
-        app.STATE.update(self.original_state)
+        app.RUNTIME.data.clear()
+        app.RUNTIME.data.update(self.original_state)
 
     def create_demo_task(self):
         return TaskRequest({'device_id': 'demo-nvme0', 'plan_id': 'plan-burnin', 'mode': 'demo'})
@@ -58,7 +58,7 @@ class TaskCreationTests(unittest.TestCase):
             task['started_at'] = '2026-07-29 16:00:00'
 
         with patch.object(app, 'running_on_linux', return_value=False), \
-             patch.object(app, 'build_demo_ssd_inventory', return_value=[self.device]), \
+             patch.object(app, 'demo_ssd_inventory', return_value=[self.device]), \
              patch.object(app, 'enrich_device', side_effect=lambda device: device), \
              patch.object(app, 'start_task_execution', side_effect=mark_started), \
              patch.object(app, 'persist_test_workspace_state'):
@@ -71,11 +71,11 @@ class TaskCreationTests(unittest.TestCase):
         self.assertEqual(started, [request.response['id']])
 
     def test_active_task_keeps_new_demo_task_queued(self):
-        app.STATE['tasks'] = [{'id': 'running-task', 'status': '运行中'}]
+        app.RUNTIME.tasks = [{'id': 'running-task', 'status': '运行中'}]
         request = self.create_demo_task()
 
         with patch.object(app, 'running_on_linux', return_value=False), \
-             patch.object(app, 'build_demo_ssd_inventory', return_value=[self.device]), \
+             patch.object(app, 'demo_ssd_inventory', return_value=[self.device]), \
              patch.object(app, 'enrich_device', side_effect=lambda device: device), \
              patch.object(app, 'start_task_execution') as start_execution, \
              patch.object(app, 'persist_test_workspace_state'):

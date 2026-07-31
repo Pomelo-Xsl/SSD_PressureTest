@@ -1,15 +1,47 @@
 import json
+import fcntl
 import os
 import platform
 import shutil
 import sqlite3
 import subprocess
 from datetime import datetime
-from hashlib import sha256
 from pathlib import Path
 
+from common import text_digest
 
-def build_fio_command(task, runtime_seconds, stage_name=None):
+
+class DeviceBusyError(RuntimeError):
+    pass
+
+
+def acquire_device_lease(device_path):
+    lock_root = Path(os.environ.get('SSD_PRESSURE_LOCK_DIR', '/tmp/ssd-pressure-test-locks'))
+    lock_root.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_root / '{0}.lock'.format(text_digest(device_path, algorithm='sha256', length=20))
+    handle = lock_file.open('a+')
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise DeviceBusyError('设备 {0} 已被另一个测试进程占用'.format(device_path))
+    handle.seek(0)
+    handle.truncate()
+    handle.write('{0}\n'.format(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def release_device_lease(handle):
+    if handle is None:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def fio_command(task, runtime_seconds, stage_name=None):
     name = 'enterprise-ssd-{0}'.format(task['id'])
     if stage_name:
         name += '-' + str(stage_name)
@@ -62,7 +94,7 @@ def stage_progress(stages, completed_seconds):
     return {'overall_progress': 100, 'stage_index': max(0, len(stages) - 1), 'stage_progress': 100}
 
 
-def summarize_stage_result(stage, fio_metrics, elapsed_seconds):
+def stage_result(stage, fio_metrics, elapsed_seconds):
     return {'stage': stage.get('name'), 'ordinal': stage.get('ordinal'), 'planned_seconds': stage.get('duration_seconds'), 'elapsed_seconds': elapsed_seconds, 'metrics': fio_metrics, 'completed': elapsed_seconds >= stage.get('duration_seconds', 0)}
 
 
@@ -110,8 +142,7 @@ def prune_backups(backup_folder, keep_count):
 
 
 def asset_id(device):
-    identity = '|'.join([str(device.get('serial') or ''), str(device.get('path') or ''), str(device.get('name') or '')])
-    return sha256(identity.encode('utf-8')).hexdigest()[:16]
+    return text_digest(device.get('serial') or '', device.get('path') or '', device.get('name') or '', algorithm='sha256', length=16)
 
 
 def classify_device_risk(device):
@@ -134,7 +165,7 @@ def enrich_device(device):
     return item
 
 
-def summarize_inventory(devices):
+def inventory_overview(devices):
     summary = {'total': len(devices), 'testable': 0, 'high_risk': 0, 'medium_risk': 0, 'low_risk': 0, 'by_interface': {}}
     for device in devices:
         if device.get('testable'):
@@ -164,7 +195,7 @@ def command_version(command):
     return {'installed': True, 'path': executable, 'version': version}
 
 
-def collect_environment_health(destructive_enabled, is_root):
+def runtime_health(destructive_enabled, is_root):
     tools = {name: command_version(name) for name in ('fio', 'nvme', 'smartctl', 'lsblk')}
     checks = []
     checks.append({'name': 'Linux 内核', 'ok': platform.system() == 'Linux', 'detail': '{0} {1}'.format(platform.system(), platform.release())})

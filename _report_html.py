@@ -1,9 +1,6 @@
 from html import escape
 
-def _text(value, fallback='--'):
-    if value in (None, '', '--'):
-        return fallback
-    return escape(str(value))
+from common import html_text as _text
 
 def _metric_value(metric, key, suffix=''):
     if not metric.get('available'):
@@ -74,7 +71,7 @@ def _report_evidence_section(enrichment):
         recommendations,
     )
 
-def build_report(task, analysis, generated_at, enrichment=None):
+def render_report_page(task, analysis, generated_at, enrichment=None):
     metrics = analysis['metrics']
     temperature = metrics['temperature']
     latency = metrics['latency']

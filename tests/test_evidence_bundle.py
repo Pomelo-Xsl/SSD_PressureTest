@@ -4,7 +4,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from evidence_bundle import BUNDLE_FORMAT, EvidenceBundleError, EvidenceBundleVerificationError, MANIFEST_NAME, build_evidence_bundle, list_evidence_files, read_evidence_bundle, validate_evidence_name, verify_evidence_bundle
+from evidence_bundle import BUNDLE_FORMAT, EvidenceBundleError, EvidenceBundleVerificationError, MANIFEST_NAME, pack_evidence_archive, list_evidence_files, read_evidence_bundle, validate_evidence_name, verify_evidence_bundle
 
 
 class EvidenceBundleTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class EvidenceBundleTests(unittest.TestCase):
                 target.writestr(name, data)
 
     def test_build_creates_sorted_bundle_with_sha256_manifest(self):
-        result = build_evidence_bundle(self._bundle_path(), self.payloads, {'task_id': 'task-001', 'operator': 'qa'})
+        result = pack_evidence_archive(self._bundle_path(), self.payloads, {'task_id': 'task-001', 'operator': 'qa'})
         self.assertEqual(result['manifest']['format'], BUNDLE_FORMAT)
         self.assertEqual(result['manifest']['metadata']['task_id'], 'task-001')
         self.assertEqual([item['name'] for item in result['files']], sorted(self.payloads))
@@ -50,12 +50,12 @@ class EvidenceBundleTests(unittest.TestCase):
     def test_identical_input_builds_byte_for_byte_deterministic_archives(self):
         first = self._bundle_path('first.zip')
         second = self._bundle_path('second.zip')
-        build_evidence_bundle(first, list(reversed(list(self.payloads.items()))), {'task_id': 'task-001'})
-        build_evidence_bundle(second, self.payloads, {'task_id': 'task-001'})
+        pack_evidence_archive(first, list(reversed(list(self.payloads.items()))), {'task_id': 'task-001'})
+        pack_evidence_archive(second, self.payloads, {'task_id': 'task-001'})
         self.assertEqual(first.read_bytes(), second.read_bytes())
 
     def test_list_read_and_verify_return_original_payloads(self):
-        build_evidence_bundle(self._bundle_path(), self.payloads, {'task_id': 'task-002'})
+        pack_evidence_archive(self._bundle_path(), self.payloads, {'task_id': 'task-002'})
         listing = list_evidence_files(self._bundle_path())
         bundle = read_evidence_bundle(self._bundle_path())
         verification = verify_evidence_bundle(self._bundle_path())
@@ -74,22 +74,22 @@ class EvidenceBundleTests(unittest.TestCase):
 
     def test_build_rejects_duplicate_names_and_non_byte_payloads(self):
         with self.assertRaises(EvidenceBundleError):
-            build_evidence_bundle(self._bundle_path(), [('one.log', b'a'), ('one.log', b'b')])
+            pack_evidence_archive(self._bundle_path(), [('one.log', b'a'), ('one.log', b'b')])
         with self.assertRaises(EvidenceBundleError):
-            build_evidence_bundle(self._bundle_path(), {'one.log': 'not-bytes'})
+            pack_evidence_archive(self._bundle_path(), {'one.log': 'not-bytes'})
         with self.assertRaises(EvidenceBundleError):
-            build_evidence_bundle(self._bundle_path(), {})
+            pack_evidence_archive(self._bundle_path(), {})
 
     def test_metadata_must_be_json_object_with_standard_values(self):
         with self.assertRaises(EvidenceBundleError):
-            build_evidence_bundle(self._bundle_path(), self.payloads, ['not', 'an', 'object'])
+            pack_evidence_archive(self._bundle_path(), self.payloads, ['not', 'an', 'object'])
         with self.assertRaises(EvidenceBundleError):
-            build_evidence_bundle(self._bundle_path(), self.payloads, {'not_json': set([1])})
+            pack_evidence_archive(self._bundle_path(), self.payloads, {'not_json': set([1])})
 
     def test_read_detects_payload_checksum_tampering(self):
         original = self._bundle_path('original.zip')
         tampered = self._bundle_path('tampered.zip')
-        build_evidence_bundle(original, self.payloads)
+        pack_evidence_archive(original, self.payloads)
         self._rewrite_bundle(original, tampered, {'telemetry/full.log': b'NVME telemetry'})
         with self.assertRaises(EvidenceBundleVerificationError):
             read_evidence_bundle(tampered)
@@ -100,7 +100,7 @@ class EvidenceBundleTests(unittest.TestCase):
     def test_read_rejects_extra_zip_entry_and_non_deterministic_order(self):
         original = self._bundle_path('original.zip')
         extra = self._bundle_path('extra.zip')
-        build_evidence_bundle(original, self.payloads)
+        pack_evidence_archive(original, self.payloads)
         self._rewrite_bundle(original, extra, extras={'unexpected.txt': b'not listed'})
         with self.assertRaises(EvidenceBundleVerificationError):
             list_evidence_files(extra)
