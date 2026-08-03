@@ -72,7 +72,7 @@ class FrontendStructureTests(unittest.TestCase):
     def test_page_config_owns_titles_and_visible_page_rendering(self):
         self.assertIn('const PAGE_CONFIG=', self.script)
         self.assertIn('PAGE_CONFIG[page].draw()', self.script)
-        self.assertIn('document.title=`SSD PressureTest · ${PAGE_CONFIG[page].title}`', self.script)
+        self.assertIn('document.title=`企业级SSD PressureTest系统 · ${PAGE_CONFIG[page].title}`', self.script)
 
 
 if __name__ == '__main__':
